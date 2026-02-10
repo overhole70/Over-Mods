@@ -34,11 +34,6 @@ import {
   sendPasswordResetEmail,
   updateEmail
 } from "firebase/auth";
-import { 
-  getMessaging, 
-  getToken, 
-  onMessage
-} from "firebase/messaging";
 import { Mod, ModType, AdminPermissions, User, VerificationStatus, Notification, ModReport, ChatMessage, GameInvite, FriendRequest, NewsItem, Complaint, StaffMessage, MinecraftServer, Contest, QuestionProgress, QuestionChallenge, CommunityPost, PostComment } from "./types";
 
 const firebaseConfig = {
@@ -56,17 +51,6 @@ export const firestore = initializeFirestore(app, {
   useFetchStreams: false,
 });
 export const auth = getAuth(app);
-
-// Safe messaging initialization
-let messaging: any = null;
-try {
-  messaging = getMessaging(app);
-} catch (e) {
-  console.warn("Firebase Messaging is not supported in this environment.", e);
-}
-export { messaging };
-
-const VAPID_KEY = "BF4d8czG_F4CQe6iB_-lfJ_Nbdf9YXNiUCQGpPUteYuRZC1UAgNihZUtvJCBXMhpky35nAMtMM6tHWoPzqP6TBk";
 
 let cachedIP: string | null = null;
 let ipRequestPromise: Promise<string> | null = null;
@@ -509,9 +493,7 @@ export class PlatformDB {
   async deleteMod(id: string) { await deleteDoc(doc(firestore, 'mods', id)); }
   async followUser(followerId: string, followingId: string) { const userRef = doc(firestore, 'users', followerId); const targetRef = doc(firestore, 'users', followingId); await runTransaction(firestore, async (tx) => { const uSnap = await tx.get(userRef); if (!uSnap.exists()) return; const following = uSnap.data().following || []; if (following.includes(followingId)) { tx.update(userRef, { following: arrayRemove(followingId) }); tx.update(targetRef, { followers: increment(-1) }); } else { tx.update(userRef, { following: arrayUnion(followingId) }); tx.update(targetRef, { followers: increment(1) }); } }); }
   onAuthChange(callback: (user: any) => void) { return onAuthStateChanged(auth, callback); }
-  async requestFcmToken(userId?: string): Promise<string | null> { if (!messaging) return null; try { const permission = await Notification.requestPermission(); if (permission === 'granted') { const token = await getToken(messaging, { vapidKey: VAPID_KEY }); if (token && userId) { await updateDoc(doc(firestore, 'users', userId), { fcmToken: token }); } return token; } } catch (error) { console.error("Error retrieving FCM token:", error); } return null; }
-  onMessageListener() { return new Promise((resolve) => { if (messaging) { onMessage(messaging, (payload) => { resolve(payload); }); } }); }
-
+  
   async getFollowers(userId: string): Promise<User[]> {
     const q = query(collection(firestore, 'users'), where('following', 'array-contains', userId));
     const snap = await getDocs(q);

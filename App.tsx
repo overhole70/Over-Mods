@@ -87,11 +87,6 @@ export default function App() {
     let profileUnsubscribe: (() => void) | null = null;
     const authUnsubscribe = db.onAuthChange(async (firebaseUser) => {
       if (firebaseUser) {
-        // Request Permission & Token on login
-        try {
-          await db.requestFcmToken(firebaseUser.uid);
-        } catch (e) { console.error(e); }
-
         profileUnsubscribe = onSnapshot(doc(firestore, 'users', firebaseUser.uid), async (docSnap) => {
           if (docSnap.exists()) {
             const profile = docSnap.data() as User;
@@ -120,15 +115,6 @@ export default function App() {
       initializeData();
       initialLoadDone.current = true;
     }
-
-    // Foreground Message Listener
-    db.onMessageListener().then((payload: any) => {
-      console.log('Foreground Message:', payload);
-      // Optional: Show custom toast UI
-      if (Notification.permission === 'granted') {
-         new Notification(payload.notification.title, { body: payload.notification.body });
-      }
-    });
 
     return () => { 
       authUnsubscribe(); 
