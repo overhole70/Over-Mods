@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowRight, Download, ShieldCheck, Loader2, CheckCircle, Edit, MessageSquare, Send, User as UserIcon, Flag, Star, Clock, X, Info, Sparkles, LayoutGrid, Copy, Share2, Trash2, Youtube, ThumbsUp, ThumbsDown, Calendar, FileText, Database, Layers, AlertTriangle, Play, Eye, Zap, Tag, Monitor, HardDrive, UserPlus, UserMinus, Hash, ImageIcon, Lock, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, Download, ShieldCheck, Loader2, CheckCircle, Edit, MessageSquare, Send, User as UserIcon, Flag, Star, Clock, X, Info, Sparkles, LayoutGrid, Copy, Share2, Trash2, Youtube, ThumbsUp, ThumbsDown, Calendar, FileText, Database, Layers, AlertTriangle, Play, Eye, Zap, Tag, Monitor, HardDrive, UserPlus, UserMinus, Hash, ImageIcon, Lock, CheckCircle2, TrendingUp } from 'lucide-react';
 import { Mod, User, Comment } from '../types';
 import { db } from '../db';
 import { useTranslation } from '../LanguageContext';
@@ -43,8 +43,20 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
   const [hoverRating, setHoverRating] = useState<number>(0);
   const [isRatingProcessing, setIsRatingProcessing] = useState(false);
 
+  // Admin Fake Stats Logic
+  const isOwner = currentUser?.email === OWNER_EMAIL;
+  const [showFakeStatsModal, setShowFakeStatsModal] = useState(false);
+  const [fakeViews, setFakeViews] = useState(mod.fakeStats?.views || 0);
+  const [fakeDownloads, setFakeDownloads] = useState(mod.fakeStats?.downloads || 0);
+  const [fakeLikes, setFakeLikes] = useState(mod.fakeStats?.likes || 0);
+
+  // Stats Display
+  const displayViews = (mod.stats.uniqueViews || 0) + (mod.fakeStats?.views || 0);
+  const displayDownloads = (mod.stats.downloads || 0) + (mod.fakeStats?.downloads || 0);
+  const displayLikes = (mod.stats.likes || 0) + (mod.fakeStats?.likes || 0);
+
   const [votes, setVotes] = useState({ 
-    likes: mod.stats.likes || 0, 
+    likes: displayLikes, 
     dislikes: mod.stats.dislikes || 0,
     hasLiked: mod.likedBy?.includes(currentUser?.id || ''),
     hasDisliked: mod.dislikedBy?.includes(currentUser?.id || '')
@@ -222,16 +234,45 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
       await db.purchaseMod(currentUser, mod);
       setIsPurchased(true);
       setShowPurchaseModal(false);
-      
-      // Auto-start download after purchase?
-      // Or just let user click download again.
-      // Let's notify user.
       alert('تم الشراء بنجاح! يمكنك الآن تحميل الإضافة.');
     } catch (err: any) {
       alert(err.message || 'فشل عملية الشراء');
     } finally {
       setIsPurchasing(false);
     }
+  };
+
+  const handleSaveFakeStats = async () => {
+    try {
+        await db.updateModFakeStats(mod.id, {
+            views: Number(fakeViews),
+            downloads: Number(fakeDownloads),
+            likes: Number(fakeLikes)
+        });
+        setShowFakeStatsModal(false);
+        // Force refresh somehow or rely on realtime updates if listening? 
+        // For now, local UI update requires parent refresh, but we can do an optimistic local state update if needed, 
+        // but typically App.tsx handles refreshes.
+        alert("Admin Stats Updated - Refresh to see changes.");
+    } catch (e) {
+        alert("Update failed");
+    }
+  };
+
+  const handleResetFakeStats = async () => {
+    try {
+        await db.resetModFakeStats(mod.id);
+        setShowFakeStatsModal(false);
+        alert("Stats reset to genuine values.");
+    } catch (e) {
+        alert("Reset failed");
+    }
+  };
+
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return num.toString();
   };
 
   return (
@@ -243,6 +284,11 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
         </button>
         
         <div className="flex gap-2">
+          {isOwner && (
+             <button onClick={() => setShowFakeStatsModal(true)} className="p-3.5 bg-red-900/20 text-red-500 border border-red-500/20 hover:bg-red-600 hover:text-white rounded-2xl transition-all active:scale-90" title="Admin Stats Override">
+                <TrendingUp size={20} />
+             </button>
+          )}
           <button onClick={() => setShowReportModal(true)} className="p-3.5 bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white rounded-2xl transition-all active:scale-90"><Flag size={20} /></button>
           {(currentUser?.id === mod.publisherId || isAdmin) && (
             <>
@@ -280,12 +326,12 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
              <div className="flex bg-zinc-900/50 border border-white/5 rounded-2xl p-1 backdrop-blur-xl">
                  <button onClick={() => handleVote('like')} className={`flex items-center gap-3 px-8 py-3.5 rounded-xl transition-all ${votes.hasLiked ? 'theme-bg-primary text-black' : 'text-zinc-500'}`}>
                     <ThumbsUp size={22} fill={votes.hasLiked ? "currentColor" : "none"} /> 
-                    <span className="text-sm font-black">{votes.likes}</span>
+                    <span className="text-sm font-black">{formatNumber(displayLikes)}</span>
                  </button>
                  <div className="w-px bg-white/5 my-2 mx-1"></div>
                  <button onClick={() => handleVote('dislike')} className={`flex items-center gap-3 px-8 py-3.5 rounded-xl transition-all ${votes.hasDisliked ? 'bg-red-600 text-white' : 'text-zinc-500'}`}>
                     <ThumbsDown size={22} fill={votes.hasDisliked ? "currentColor" : "none"} /> 
-                    <span className="text-sm font-black">{votes.dislikes}</span>
+                    <span className="text-sm font-black">{formatNumber(votes.dislikes)}</span>
                  </button>
              </div>
              <div className="flex items-center gap-4 bg-zinc-900/50 border border-white/5 px-6 py-4 rounded-2xl backdrop-blur-xl">
@@ -306,8 +352,8 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
                { icon: <HardDrive size={18} />, label: 'الحجم', val: mod.fileSize || '---', color: 'text-blue-500' },
                { icon: <Tag size={18} />, label: 'القسم', val: mod.category || '---', color: 'text-purple-500' },
                { icon: <Monitor size={18} />, label: 'الإصدار', val: mod.minecraftVersion || '---', color: 'text-orange-500' },
-               { icon: <Eye size={18} />, label: 'المشاهدات', val: mod.stats.views.toLocaleString(), color: 'text-cyan-500' },
-               { icon: <Download size={18} />, label: 'التحميلات', val: mod.stats.downloads.toLocaleString(), color: 'theme-text-primary' }
+               { icon: <Eye size={18} />, label: 'المشاهدات', val: formatNumber(displayViews), color: 'text-cyan-500' },
+               { icon: <Download size={18} />, label: 'التحميلات', val: formatNumber(displayDownloads), color: 'theme-text-primary' }
              ].map((s, i) => (
                <div key={i} className="bg-zinc-900/40 p-6 rounded-3xl border border-white/5 flex flex-col gap-2">
                   <div className={s.color}>{s.icon}</div>
@@ -487,6 +533,68 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
                    {isPurchasing ? 'جاري الشراء...' : 'تأكيد ودفع النقاط'}
                  </button>
                  <button onClick={() => setShowPurchaseModal(false)} disabled={isPurchasing} className="w-full py-5 bg-zinc-900 text-zinc-500 rounded-2xl font-black text-lg hover:text-white transition-colors">إلغاء</button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Admin Stats Override Modal */}
+      {showFakeStatsModal && isOwner && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+           <div className="absolute inset-0 bg-black/98 backdrop-blur-2xl" onClick={() => setShowFakeStatsModal(false)}></div>
+           <div className="bg-[#0f0f0f] border border-red-900/30 p-10 rounded-[4rem] w-full max-w-md relative z-10 shadow-[0_0_100px_rgba(255,0,0,0.1)] text-center animate-in zoom-in">
+              <div className="w-20 h-20 bg-red-900/20 text-red-500 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-red-500/20 shadow-xl">
+                <TrendingUp size={40} />
+              </div>
+              <h3 className="text-2xl font-black text-white mb-2">تعديل الإحصائيات (إداري)</h3>
+              <p className="text-red-500/70 font-black text-[10px] uppercase tracking-widest mb-8">
+                التغييرات تظهر للجميع. لا تؤثر على النقاط.
+              </p>
+              
+              <div className="space-y-4 mb-8">
+                 <div className="space-y-1 text-right">
+                    <label className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mr-2">زيادة المشاهدات</label>
+                    <input 
+                      type="number" 
+                      value={fakeViews || ''} 
+                      onChange={e => setFakeViews(Number(e.target.value))} 
+                      placeholder="0"
+                      className="w-full bg-zinc-950 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-red-500/50 placeholder:text-white/20" 
+                    />
+                 </div>
+                 <div className="space-y-1 text-right">
+                    <label className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mr-2">زيادة التحميلات</label>
+                    <input 
+                      type="number" 
+                      value={fakeDownloads || ''} 
+                      onChange={e => setFakeDownloads(Number(e.target.value))} 
+                      placeholder="0"
+                      className="w-full bg-zinc-950 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-red-500/50 placeholder:text-white/20" 
+                    />
+                 </div>
+                 <div className="space-y-1 text-right">
+                    <label className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mr-2">زيادة الإعجابات</label>
+                    <input 
+                      type="number" 
+                      value={fakeLikes || ''} 
+                      onChange={e => setFakeLikes(Number(e.target.value))} 
+                      placeholder="0"
+                      className="w-full bg-zinc-950 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-red-500/50 placeholder:text-white/20" 
+                    />
+                 </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                 <button 
+                  onClick={handleSaveFakeStats} 
+                  className="w-full py-5 bg-red-900/80 text-white border border-red-500/30 rounded-2xl font-black text-lg active:scale-95 transition-all shadow-xl hover:bg-red-800"
+                 >
+                   حفظ التغييرات
+                 </button>
+                 <button onClick={handleResetFakeStats} className="w-full py-5 bg-red-900/30 text-red-400 border border-red-500/20 rounded-2xl font-black text-lg hover:bg-red-900/50 transition-colors">
+                   إعادة للوضع الأصلي
+                 </button>
+                 <button onClick={() => setShowFakeStatsModal(false)} className="w-full py-5 bg-zinc-900 text-zinc-500 rounded-2xl font-black text-lg hover:text-white transition-colors">إلغاء</button>
               </div>
            </div>
         </div>

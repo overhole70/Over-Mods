@@ -44,10 +44,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentView, onViewC
              <div className="w-12 h-12 theme-bg-primary rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(132,204,22,0.2)]">
                <Sparkles size={24} className="text-black" />
              </div>
-             <div className="flex flex-col">
-                <span className="text-xl font-black text-white leading-none">Over <span className="theme-text-primary">Mods</span></span>
-                <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mt-1">Bedrock Community</span>
-             </div>
            </div>
            <button onClick={onClose} className="lg:hidden p-2 text-zinc-500 hover:text-white transition-all"><X size={24} /></button>
         </div>

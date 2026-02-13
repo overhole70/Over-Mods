@@ -37,7 +37,6 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onViewChange, onSearch, is
           <div className="w-10 h-10 theme-bg-primary rounded-xl flex items-center justify-center shadow-lg theme-shadow-primary-soft group-hover:rotate-6 transition-transform">
             <Sparkles size={20} className="text-black" />
           </div>
-          <h2 className="text-xl md:text-2xl font-black text-white">Over <span className="theme-text-primary">Mods</span></h2>
         </div>
       </div>
 

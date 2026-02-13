@@ -1,4 +1,3 @@
-
 export type ModType = 'Mod' | 'Resource Pack' | 'Map' | 'Modpack' | 'Server';
 export type UserRole = 'User' | 'Creator' | 'Admin' | 'Helper';
 export type VerificationStatus = 'none' | 'pending' | 'youtuber_no_video' | 'verified';
@@ -20,6 +19,29 @@ export interface Wallet {
   gift: number;
   earned: number;
 }
+
+// --- Popup Window Types ---
+export type PopupAction = 'close' | 'link' | 'navigate';
+export type PopupSize = 'small' | 'half' | '70' | 'full';
+
+export interface PopupButton {
+  text: string;
+  action: PopupAction;
+  payload?: string; // URL or View ID
+  style: 'primary' | 'danger' | 'secondary';
+}
+
+export interface PopupWindowConfig {
+  isActive: boolean;
+  title: string;
+  description: string;
+  icon: string; // Icon name
+  size: PopupSize;
+  dismissible: boolean;
+  delaySeconds: number;
+  buttons: PopupButton[];
+}
+// --------------------------
 
 export interface Notification {
   id: string;
@@ -67,6 +89,7 @@ export interface CommunityPost {
   createdAt: string;
   expiresAt: string;
   likes: string[]; // User IDs
+  fakeLikes?: number; // Admin override
   comments: PostComment[];
 }
 // ---------------------------
@@ -139,6 +162,9 @@ export interface User {
   securityNotificationsEnabled?: boolean;
   lastKnownIP?: string;
   fcmToken?: string;
+  securityCode?: string; // Encrypted or plain (depending on implementation level)
+  securityCodeFrequency?: number; // 1 = Every time, 5 = Every 5 logins
+  loginsSinceLastCode?: number; // Counter
   // Wallet & Points
   wallet: Wallet;
   lastOwnerGrant?: string;
@@ -159,7 +185,7 @@ export interface PrivacySettings {
   showJoinDate: boolean;
   privateCollections: boolean;
   showOnlineStatus: boolean; 
-  messagingPermission: 'everyone' | 'followers' | 'none';
+  messagingPermission: 'everyone' | 'followers' | 'friends' | 'none';
 }
 
 export interface MinecraftServer {
@@ -214,6 +240,11 @@ export interface Mod {
   downloadUrl: string;
   fileSize: string;
   stats: ModStats;
+  fakeStats?: {
+    views?: number;
+    downloads?: number;
+    likes?: number;
+  };
   createdAt: string;
   comments?: Comment[];
   likedBy?: string[];

@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Complaint, ModReport, AdminPermissions, Notification, NewsItem, StaffMessage, ChatMessage } from '../types';
+import { User, Complaint, ModReport, AdminPermissions, Notification, NewsItem, StaffMessage, ChatMessage, PopupWindowConfig, PopupButton, PopupSize } from '../types';
 import { db } from '../db';
 import { 
   Users, Flag, Bell, ShieldAlert, Ban, Unlock, 
-  CheckCircle, XCircle, Search, UserPlus, Trash2, Send, Loader2, Camera, CheckCircle2, ShieldCheck, Youtube, ExternalLink, Settings, AlertTriangle, Save, Plus, Info, Calendar, Mail, UserCircle, Hash, Layout, User as UserIcon, MessageSquare, ChevronDown, Monitor, Sparkles, FileCheck, Shield, HeartHandshake, Newspaper, Edit3, UserMinus, Image as ImageIcon, X, Copy, Check, Eye, Ghost, History, Inbox, Clock, Trophy, RefreshCw
+  CheckCircle, XCircle, Search, UserPlus, Trash2, Send, Loader2, Camera, CheckCircle2, ShieldCheck, Youtube, ExternalLink, Settings, AlertTriangle, Save, Plus, Info, Calendar, Mail, UserCircle, Hash, Layout, User as UserIcon, MessageSquare, ChevronDown, Monitor, Sparkles, FileCheck, Shield, HeartHandshake, Newspaper, Edit3, UserMinus, Image as ImageIcon, X, Copy, Check, Eye, Ghost, History, Inbox, Clock, Trophy, RefreshCw, LayoutPanelLeft
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -38,7 +37,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
     { id: 'news', label: 'الأخبار', icon: <Newspaper size={16} />, permission: 'canManageNews' },
     { id: 'staff_chat', label: 'العمليات', icon: <MessageSquare size={16} />, permission: null },
     { id: 'helpers', label: 'المساعدين', icon: <Shield size={16} />, permission: 'ownerOnly' },
-    { id: 'notifications', label: 'البث الإداري', icon: <Bell size={16} />, permission: 'canSendNotifications' }
+    { id: 'notifications', label: 'البث الإداري', icon: <Bell size={16} />, permission: 'canSendNotifications' },
+    { id: 'popups', label: 'نوافذ النظام', icon: <LayoutPanelLeft size={16} />, permission: 'ownerOnly' }
   ];
 
   const isTabPermitted = (tabId: string) => {
@@ -98,6 +98,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
   const [monitorSelectedPartner, setMonitorSelectedPartner] = useState<User | null>(null);
   const [monitorMessages, setMonitorMessages] = useState<ChatMessage[]>([]);
 
+  // Popup Window State
+  const [popupConfig, setPopupConfig] = useState<PopupWindowConfig>({
+    isActive: false,
+    title: '',
+    description: '',
+    icon: 'Info',
+    size: 'small',
+    dismissible: true,
+    delaySeconds: 0,
+    buttons: [
+      { text: 'حسناً', action: 'close', style: 'primary' }
+    ]
+  });
+
   const [userDetailModal, setUserDetailModal] = useState<User | null>(null);
 
   const staffChatEndRef = useRef<HTMLDivElement>(null);
@@ -145,12 +159,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [u, r, req, comp, n, site] = await Promise.all([
+      const [u, r, req, comp, n, site, popup] = await Promise.all([
         db.getAllUsers(), db.getAll('reports'), db.getPendingVerifications(),
-        db.getAll('complaints'), db.getAll('news'), db.getSiteSettings()
+        db.getAll('complaints'), db.getAll('news'), db.getSiteSettings(),
+        db.get('settings', 'popup_window')
       ]);
       setUsers(u || []); setReports(r as ModReport[] || []); setRequests(req || []);
       setComplaints(comp as Complaint[] || []); setNews(n as NewsItem[] || []); setSiteSettings(site);
+      if (popup) setPopupConfig(popup as PopupWindowConfig);
     } finally { setIsLoading(false); }
   };
 
@@ -223,6 +239,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
     } finally { setIsProcessing(false); }
   };
 
+  const handleSavePopup = async () => {
+    setIsProcessing(true);
+    try {
+      await db.updatePopupSettings({ ...popupConfig, isActive: true });
+      alert("تم تفعيل النافذة المنبثقة بنجاح");
+    } catch(e) {
+      alert("فشل الحفظ");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeactivatePopup = async () => {
+    setIsProcessing(true);
+    try {
+      await db.updatePopupSettings({ ...popupConfig, isActive: false });
+      setPopupConfig(prev => ({ ...prev, isActive: false }));
+      alert("تم إيقاف النافذة");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const filteredUsers = users.filter(u => (u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) || (u.username || '').toLowerCase().includes(searchTerm.toLowerCase())).filter(u => isOwner || u.email !== OWNER_EMAIL);
 
   const SectionHeader = ({ title, count, color }: any) => (
@@ -239,6 +278,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
     { name: 'Trophy', icon: <Trophy size={18} /> },
     { name: 'Info', icon: <Info size={18} /> },
     { name: 'Mail', icon: <Mail size={18} /> },
+    { name: 'Gift', icon: <Trophy size={18} /> }, // Using Trophy for gift visual
+    { name: 'AlertTriangle', icon: <AlertTriangle size={18} /> },
+    { name: 'CheckCircle', icon: <CheckCircle size={18} /> }
   ];
 
   if (isLoading) return <div className="py-40 flex items-center justify-center"><Loader2 className="animate-spin text-lime-500" size={56} /></div>;
@@ -313,6 +355,159 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
                       </div>
                    </div>
                  ))}
+              </div>
+           </div>
+         )}
+
+         {/* Popups Section (New) */}
+         {activeTab === 'popups' && isTabPermitted('popups') && (
+           <div className="space-y-10 animate-in slide-in-from-right-6">
+              <div className="flex items-center justify-between">
+                 <SectionHeader title="نوافذ النظام المنبثقة" />
+                 <div className="flex gap-3">
+                    <div className={`px-4 py-2 rounded-xl text-[10px] font-black ${popupConfig.isActive ? 'bg-lime-500/10 text-lime-500 border border-lime-500/20' : 'bg-zinc-900 text-zinc-500'}`}>
+                       {popupConfig.isActive ? 'نشط حالياً' : 'غير نشط'}
+                    </div>
+                 </div>
+              </div>
+
+              <div className="bg-zinc-900 border border-white/10 p-8 rounded-[3.5rem] shadow-2xl">
+                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                    <div className="space-y-6">
+                       <h4 className="text-white font-black text-lg mb-4">تكوين النافذة</h4>
+                       
+                       <div className="space-y-4">
+                          <div>
+                             <label className="text-[10px] text-zinc-500 font-bold uppercase mb-2 block">العنوان</label>
+                             <input type="text" value={popupConfig.title} onChange={e => setPopupConfig({...popupConfig, title: e.target.value})} className="w-full bg-zinc-950 border border-white/5 rounded-2xl p-4 text-white font-black text-sm outline-none focus:border-lime-500/50" />
+                          </div>
+                          <div>
+                             <label className="text-[10px] text-zinc-500 font-bold uppercase mb-2 block">الوصف</label>
+                             <textarea value={popupConfig.description} onChange={e => setPopupConfig({...popupConfig, description: e.target.value})} className="w-full bg-zinc-950 border border-white/5 rounded-3xl p-4 text-white font-medium text-sm outline-none focus:border-lime-500/50 resize-none" rows={4} />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                             <div>
+                                <label className="text-[10px] text-zinc-500 font-bold uppercase mb-2 block">الأيقونة</label>
+                                <select value={popupConfig.icon} onChange={e => setPopupConfig({...popupConfig, icon: e.target.value})} className="w-full bg-zinc-950 border border-white/5 rounded-2xl p-4 text-white text-xs font-bold outline-none">
+                                   {iconOptions.map(opt => <option key={opt.name} value={opt.name}>{opt.name}</option>)}
+                                </select>
+                             </div>
+                             <div>
+                                <label className="text-[10px] text-zinc-500 font-bold uppercase mb-2 block">الحجم</label>
+                                <select value={popupConfig.size} onChange={e => setPopupConfig({...popupConfig, size: e.target.value as PopupSize})} className="w-full bg-zinc-950 border border-white/5 rounded-2xl p-4 text-white text-xs font-bold outline-none">
+                                   <option value="small">عادي (تنبيه)</option>
+                                   <option value="half">نصف الشاشة</option>
+                                   <option value="70">كبير (70%)</option>
+                                   <option value="full">ملء الشاشة</option>
+                                </select>
+                             </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                             <div>
+                                <label className="text-[10px] text-zinc-500 font-bold uppercase mb-2 block">توقيت الظهور (ثواني)</label>
+                                <input type="number" value={popupConfig.delaySeconds} onChange={e => setPopupConfig({...popupConfig, delaySeconds: parseInt(e.target.value)})} className="w-full bg-zinc-950 border border-white/5 rounded-2xl p-4 text-white font-black text-sm outline-none focus:border-lime-500/50" />
+                             </div>
+                             <div className="flex items-center gap-3 bg-zinc-950 border border-white/5 rounded-2xl px-4">
+                                <input type="checkbox" checked={popupConfig.dismissible} onChange={e => setPopupConfig({...popupConfig, dismissible: e.target.checked})} className="w-5 h-5 accent-lime-500" />
+                                <span className="text-xs font-bold text-zinc-400">يمكن إغلاقه (Dismissible)</span>
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+
+                    <div className="space-y-6">
+                       <h4 className="text-white font-black text-lg mb-4">الأزرار والإجراءات</h4>
+                       <div className="space-y-4">
+                          {popupConfig.buttons.map((btn, idx) => (
+                            <div key={idx} className="p-4 bg-zinc-950 border border-white/5 rounded-3xl space-y-3">
+                               <div className="flex justify-between items-center">
+                                  <span className="text-[10px] font-black text-zinc-500 uppercase">الزر {idx + 1}</span>
+                                  {idx > 0 && <button onClick={() => setPopupConfig({...popupConfig, buttons: popupConfig.buttons.filter((_, i) => i !== idx)})} className="text-red-500 hover:text-red-400"><Trash2 size={16}/></button>}
+                               </div>
+                               <input 
+                                 type="text" 
+                                 placeholder="نص الزر"
+                                 value={btn.text} 
+                                 onChange={e => {
+                                    const newBtns = [...popupConfig.buttons];
+                                    newBtns[idx].text = e.target.value;
+                                    setPopupConfig({...popupConfig, buttons: newBtns});
+                                 }}
+                                 className="w-full bg-zinc-900 border border-white/5 rounded-xl p-3 text-white text-xs outline-none"
+                               />
+                               <div className="grid grid-cols-2 gap-3">
+                                  <select 
+                                    value={btn.action}
+                                    onChange={e => {
+                                       const newBtns = [...popupConfig.buttons];
+                                       newBtns[idx].action = e.target.value as any;
+                                       setPopupConfig({...popupConfig, buttons: newBtns});
+                                    }}
+                                    className="bg-zinc-900 border border-white/5 rounded-xl p-3 text-white text-xs outline-none"
+                                  >
+                                     <option value="close">إغلاق النافذة</option>
+                                     <option value="navigate">انتقال لصفحة</option>
+                                     <option value="link">فتح رابط خارجي</option>
+                                  </select>
+                                  <select 
+                                    value={btn.style}
+                                    onChange={e => {
+                                       const newBtns = [...popupConfig.buttons];
+                                       newBtns[idx].style = e.target.value as any;
+                                       setPopupConfig({...popupConfig, buttons: newBtns});
+                                    }}
+                                    className="bg-zinc-900 border border-white/5 rounded-xl p-3 text-white text-xs outline-none"
+                                  >
+                                     <option value="primary">أساسي (ملون)</option>
+                                     <option value="secondary">ثانوي (رمادي)</option>
+                                     <option value="danger">خطر (أحمر)</option>
+                                  </select>
+                               </div>
+                               {btn.action !== 'close' && (
+                                 <input 
+                                   type="text" 
+                                   placeholder={btn.action === 'navigate' ? 'مثال: home, profile' : 'https://...'}
+                                   value={btn.payload || ''} 
+                                   onChange={e => {
+                                      const newBtns = [...popupConfig.buttons];
+                                      newBtns[idx].payload = e.target.value;
+                                      setPopupConfig({...popupConfig, buttons: newBtns});
+                                   }}
+                                   className="w-full bg-zinc-900 border border-white/5 rounded-xl p-3 text-white text-xs outline-none ltr"
+                                 />
+                               )}
+                            </div>
+                          ))}
+                          {popupConfig.buttons.length < 2 && (
+                            <button 
+                              onClick={() => setPopupConfig({...popupConfig, buttons: [...popupConfig.buttons, { text: 'زر جديد', action: 'close', style: 'secondary' }]})}
+                              className="w-full py-3 border-2 border-dashed border-zinc-800 rounded-2xl text-zinc-500 text-xs font-black hover:text-white hover:border-zinc-600 transition-all"
+                            >
+                               + إضافة زر آخر
+                            </button>
+                          )}
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="flex gap-4 mt-8 pt-8 border-t border-white/5">
+                    <button 
+                      onClick={handleSavePopup}
+                      disabled={isProcessing}
+                      className="flex-1 py-5 bg-lime-500 text-black rounded-3xl font-black text-lg active:scale-95 transition-all shadow-xl shadow-lime-900/20"
+                    >
+                       {isProcessing ? <Loader2 className="animate-spin mx-auto"/> : (popupConfig.isActive ? 'تحديث النافذة' : 'تفعيل وإرسال')}
+                    </button>
+                    {popupConfig.isActive && (
+                      <button 
+                        onClick={handleDeactivatePopup}
+                        disabled={isProcessing}
+                        className="px-10 py-5 bg-red-600/10 text-red-500 border border-red-500/20 rounded-3xl font-black text-lg hover:bg-red-600 hover:text-white transition-all"
+                      >
+                         إيقاف
+                      </button>
+                    )}
+                 </div>
               </div>
            </div>
          )}
@@ -547,7 +742,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
                        <label className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mr-2 px-2">تحديد المستهدفين ({multiTargetUsers.length})</label>
                        <div className="relative">
                           <Search className="absolute right-5 top-1/2 -translate-y-1/2 text-zinc-700" size={20} />
-                          <input type="text" placeholder="ابحث عن أعضاء..." value={targetSearch} onChange={e=>setTargetSearch(e.target.value)} className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-5 pr-14 pl-6 text-white font-black text-sm outline-none focus:border-lime-500/50" />
+                          <input type="text" placeholder="بحث عن أعضاء..." value={targetSearch} onChange={e=>setTargetSearch(e.target.value)} className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-5 pr-14 pl-6 text-white font-black text-sm outline-none focus:border-lime-500/50" />
                        </div>
                        <div className="bg-zinc-950 rounded-[2.5rem] border border-white/5 p-6 h-[400px] overflow-y-auto no-scrollbar space-y-2 shadow-inner">
                           {users.filter(u => u.displayName.toLowerCase().includes(targetSearch.toLowerCase()) && u.email !== OWNER_EMAIL).map(u => (
@@ -558,7 +753,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
                                      <h5 className={`text-sm font-black transition-colors ${multiTargetUsers.includes(u.id) ? 'text-lime-500' : 'text-white'}`}>{u.displayName}</h5>
                                      <p className="text-zinc-600 text-[9px] ltr">@{u.username}</p>
                                   </div>
-                               </div>
+                                </div>
                                <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${multiTargetUsers.includes(u.id) ? 'bg-lime-500 border-lime-500 text-black' : 'border-zinc-800'}`}>
                                   {multiTargetUsers.includes(u.id) && <Check size={14} strokeWidth={4}/>}
                                </div>

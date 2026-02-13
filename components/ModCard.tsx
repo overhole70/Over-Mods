@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Eye, Download, Zap, User as UserIcon, Star, Users, ThumbsUp, ThumbsDown, Layers, Hash, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { Mod } from '../types';
@@ -14,6 +15,17 @@ interface ModCardProps {
 const ModCard: React.FC<ModCardProps> = ({ mod, onClick, onPublisherClick, isFollowing, onFollow }) => {
   const { t, isRTL } = useTranslation();
   
+  // Calculate displayed stats (Real + Fake)
+  const displayViews = (mod.stats.uniqueViews || 0) + (mod.fakeStats?.views || 0);
+  const displayDownloads = (mod.stats.downloads || 0) + (mod.fakeStats?.downloads || 0);
+  const displayLikes = (mod.stats.likes || 0) + (mod.fakeStats?.likes || 0);
+
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return num.toString();
+  };
+
   return (
     <div 
       className="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-[2.5rem] overflow-hidden group hover:theme-border-primary hover:shadow-[0_20px_60px_rgba(0,0,0,0.6)] hover:-translate-y-1.5 transition-all duration-500 cursor-pointer flex flex-col h-full"
@@ -56,11 +68,11 @@ const ModCard: React.FC<ModCardProps> = ({ mod, onClick, onPublisherClick, isFol
            </div>
            <div className="flex items-center gap-3 bg-zinc-950/50 px-3 py-1 rounded-lg border border-white/5">
               <div className="flex items-center gap-1 theme-text-primary text-[9px] font-black">
-                 <ThumbsUp size={10} /> {(mod.stats.likes || 0)}
+                 <ThumbsUp size={10} /> {formatNumber(displayLikes)}
               </div>
               <div className="w-px h-2.5 bg-white/10"></div>
               <div className="flex items-center gap-1 text-red-500 text-[9px] font-black">
-                 <ThumbsDown size={10} /> {(mod.stats.dislikes || 0)}
+                 <ThumbsDown size={10} /> {formatNumber(mod.stats.dislikes || 0)}
               </div>
            </div>
         </div>
@@ -79,13 +91,13 @@ const ModCard: React.FC<ModCardProps> = ({ mod, onClick, onPublisherClick, isFol
             <div className="flex flex-col">
                <span className="text-white text-[10px] font-black flex items-center gap-1.5">
                  <Users size={12} className="text-zinc-700" />
-                 {(mod.stats.uniqueViews || 0).toLocaleString()}
+                 {formatNumber(displayViews)}
                </span>
             </div>
             <div className="flex flex-col">
                <span className="theme-text-primary text-[10px] font-black flex items-center gap-1.5">
                  <Download size={12} />
-                 {(mod.stats.downloads || 0).toLocaleString()}
+                 {formatNumber(displayDownloads)}
                </span>
             </div>
           </div>

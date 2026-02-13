@@ -1,7 +1,6 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { User } from '../types';
-import { Mail, ShieldCheck, Loader2, Image as ImageIcon, AlertCircle, Send, CheckCircle2, User as UserIcon, Lock, Camera, CheckCircle, ArrowLeft, Eye, EyeOff, Hash, AlertTriangle, FileText, Check as CheckIcon, X } from 'lucide-react';
+import { Mail, ShieldCheck, Loader2, Image as ImageIcon, AlertCircle, Send, CheckCircle2, User as UserIcon, Lock, Camera, CheckCircle, ArrowRight, Eye, EyeOff, Hash, AlertTriangle, FileText, Check as CheckIcon, X } from 'lucide-react';
 import { db, auth } from '../db';
 
 interface LoginViewProps {
@@ -9,16 +8,25 @@ interface LoginViewProps {
 }
 
 const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
-  const [email, setEmail] = useState('');
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>('register');
+  const [registerStep, setRegisterStep] = useState<'select' | 'form'>('select');
+  const [regMethod, setRegMethod] = useState<'email' | 'username'>('email');
+  
+  // Form State
+  const [identifier, setIdentifier] = useState(''); // For login (email or username)
+  const [regEmail, setRegEmail] = useState(''); // For registration
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreedToPolicies, setAgreedToPolicies] = useState(false);
+  
+  // File State
   const [avatarPreview, setAvatarPreview] = useState<string>('');
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  
+  // UI State
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState<{ field?: string, message: string } | null>(null);
@@ -32,23 +40,46 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
   useEffect(() => {
     if (error) setError(null);
-  }, [email, password, displayName, username, confirmPassword, avatarFile, agreedToPolicies]);
+  }, [identifier, regEmail, password, displayName, username, confirmPassword, avatarFile, agreedToPolicies, regMethod]);
+
+  // Reset states when tab changes
+  useEffect(() => {
+    setRegisterStep('select');
+    setError(null);
+    setIdentifier('');
+    setRegEmail('');
+    setUsername('');
+    setDisplayName('');
+    setPassword('');
+    setConfirmPassword('');
+    setAvatarFile(null);
+    setAvatarPreview('');
+  }, [activeTab]);
 
   const translateAuthError = (err: any): string => {
     const msg = err.code || err.message || '';
+    // console.log("Auth Error:", msg); // For debugging
+    
     if (msg.includes('auth/email-already-in-use')) {
-      return 'هذا البريد الإلكتروني مسجل بالفعل. يرجى استخدام بريد آخر أو تسجيل الدخول إلى حسابك الحالي.';
+      return 'هذا البريد الإلكتروني مسجل بالفعل. يرجى استخدام بريد آخر أو تسجيل الدخول.';
     }
     if (msg.includes('auth/invalid-email')) {
       return 'البريد الإلكتروني المدخل غير صالح.';
     }
     if (msg.includes('auth/weak-password')) {
-      return 'كلمة المرور ضعيفة جداً. يرجى اختيار كلمة مرور أقوى.';
+      return 'كلمة المرور ضعيفة جداً. يرجى اختيار كلمة مرور أقوى (6 أحرف على الأقل).';
     }
     if (msg.includes('auth/user-not-found') || msg.includes('auth/wrong-password') || msg.includes('auth/invalid-credential')) {
-      return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+      return 'بيانات الدخول غير صحيحة. تأكد من البريد/اسم المستخدم وكلمة المرور.';
     }
-    return 'حدث خطأ في المصادقة. يرجى التأكد من البيانات والمحاولة مجدداً.';
+    if (msg.includes('auth/network-request-failed')) {
+      return 'فشل الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.';
+    }
+    
+    // Return custom error messages directly
+    if (!msg.includes('auth/')) return msg;
+
+    return `حدث خطأ غير متوقع: ${msg}`;
   };
 
   const triggerShake = () => {
@@ -59,61 +90,100 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > 2 * 1024 * 1024) return setError({ field: 'avatar', message: 'حجم الصورة كبير جداً (الأقصى 2MB)' });
+      
+      // Always set the file first so registration isn't blocked by preview issues
+      setAvatarFile(file);
+      setError(null);
+
       try {
+        // Attempt to resize for a nice preview
         const resized = await db.resizeImage(file, 400, 400);
-        setAvatarPreview(resized);
-        setAvatarFile(file);
+        if (resized) {
+          setAvatarPreview(resized);
+        } else {
+          // Fallback if resize returns empty (fail-safe)
+          setAvatarPreview(URL.createObjectURL(file));
+        }
       } catch (err) {
-        setError({ message: 'فشل في معالجة الصورة' });
+        // If resizing crashes completely, just show the raw file
+        console.warn("Preview generation failed, using raw file", err);
+        setAvatarPreview(URL.createObjectURL(file));
       }
     }
   };
 
-  const handleAuth = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setSuccessMsg(null);
-    
-    if (activeTab === 'register') {
-      if (!displayName.trim()) return setError({ field: 'displayName', message: 'يرجى كتابة اسمك الحقيقي أو المستعار' });
-      if (!username.trim() || username.length < 3) return setError({ field: 'username', message: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' });
-      if (!email.trim()) return setError({ field: 'email', message: 'البريد الإلكتروني مطلوب' });
-      if (password.length < 6) return setError({ field: 'password', message: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' });
-      if (password !== confirmPassword) return setError({ field: 'confirm', message: 'كلمات المرور غير متطابقة' });
-      if (!avatarFile) return setError({ field: 'avatar', message: 'يجب اختيار صورة شخصية' });
-      if (!agreedToPolicies) return setError({ message: 'يجب الموافقة على سياسة الخصوصية وشروط الاستخدام' });
-    } else {
-      if (!email.trim() || !password) {
-        triggerShake();
-        return setError({ message: 'يرجى إدخال البريد الإلكتروني وكلمة المرور' });
-      }
+    if (!identifier.trim() || !password) {
+      triggerShake();
+      return setError({ message: 'يرجى إدخال البريد/اسم المستخدم وكلمة المرور' });
     }
 
     setIsLoading(true);
+    setStatusMessage('جاري التحقق...');
+    setError(null);
+
     try {
-      if (activeTab === 'register') {
-        setStatusMessage('جاري إنشاء الحساب...');
-        await db.register(email, password, displayName, username, avatarFile);
-        setSuccessMsg('تم إنشاء حسابك! يرجى التحقق من بريدك الإلكتروني لتفعيله قبل تسجيل الدخول.');
-        setActiveTab('login');
-        setPassword('');
-      } else {
-        setStatusMessage('جاري التحقق...');
-        const firebaseUser = await db.login(email, password);
-        const profile = await db.get('users', firebaseUser.uid);
-        
-        if (profile) {
-          if (profile.isBlocked) {
-            await db.logout();
-            const reason = profile.blockedReason || 'مخالفة سياسات المنصة';
-            throw new Error(`هذا الحساب محظور حالياً. السبب: ${reason}`);
-          }
-          onLogin(profile as User);
-        } else {
-          throw new Error('تعذر العثور على بيانات المستخدم في قاعدة البيانات.');
+      const firebaseUser = await db.login(identifier.trim(), password);
+      const profile = await db.get('users', firebaseUser.uid);
+      
+      if (profile) {
+        if (profile.isBlocked) {
+          await db.logout();
+          const reason = profile.blockedReason || 'مخالفة سياسات المنصة';
+          throw new Error(`هذا الحساب محظور حالياً. السبب: ${reason}`);
         }
+        onLogin(profile as User);
+      } else {
+        throw new Error('تعذر العثور على بيانات الملف الشخصي.');
       }
+    } catch (err: any) {
+      triggerShake();
+      setError({ message: translateAuthError(err) });
+    } finally {
+      setIsLoading(false);
+      setStatusMessage('');
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMsg(null);
+
+    if (!displayName.trim()) return setError({ field: 'displayName', message: 'يرجى كتابة اسمك' });
+    if (!username.trim() || username.length < 3) return setError({ field: 'username', message: 'اسم المستخدم قصير جداً' });
+    
+    // Validate email ONLY if method is email
+    if (regMethod === 'email') {
+       if (!regEmail.trim()) return setError({ field: 'email', message: 'البريد الإلكتروني مطلوب' });
+       if (!regEmail.includes('@') || !regEmail.includes('.')) return setError({ field: 'email', message: 'تنسيق البريد الإلكتروني غير صحيح' });
+    }
+
+    if (password.length < 6) return setError({ field: 'password', message: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' });
+    if (password !== confirmPassword) return setError({ field: 'confirm', message: 'كلمات المرور غير متطابقة' });
+    // Avatar is optional but recommended; if null, DB will generate a default one.
+    // if (!avatarFile) return setError({ field: 'avatar', message: 'يجب اختيار صورة شخصية' }); 
+    if (!agreedToPolicies) return setError({ message: 'يجب الموافقة على الشروط' });
+
+    setIsLoading(true);
+    setStatusMessage('جاري إنشاء الحساب...');
+
+    try {
+      const emailToRegister = regMethod === 'email' ? regEmail.trim() : null;
+      // We pass the avatarFile even if null; db.register handles fallback
+      const newUser = await db.register(emailToRegister, password, displayName, username, avatarFile!);
+      
+      if (newUser) {
+        setSuccessMsg('تم إنشاء الحساب بنجاح! جاري تحويلك...');
+        // Auto-login since creation was successful
+        setTimeout(() => {
+           onLogin(newUser);
+        }, 1500);
+      } else {
+        throw new Error('فشل إنشاء ملف المستخدم');
+      }
+
     } catch (err: any) {
       triggerShake();
       setError({ message: translateAuthError(err) });
@@ -189,14 +259,14 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
           <div className="flex border-b border-white/5">
             <button 
               disabled={isLoading}
-              onClick={() => { setActiveTab('login'); setError(null); }}
+              onClick={() => { setActiveTab('login'); }}
               className={`flex-1 py-6 text-sm font-black transition-all ${activeTab === 'login' ? 'theme-text-primary bg-primary-alpha' : 'text-zinc-600 hover:text-zinc-400'}`}
             >
               تسجيل دخول
             </button>
             <button 
               disabled={isLoading}
-              onClick={() => { setActiveTab('register'); setError(null); }}
+              onClick={() => { setActiveTab('register'); }}
               className={`flex-1 py-6 text-sm font-black transition-all ${activeTab === 'register' ? 'theme-text-primary bg-primary-alpha' : 'text-zinc-600 hover:text-zinc-400'}`}
             >
               إنشاء حساب
@@ -204,7 +274,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
           </div>
 
           <div className="p-8 md:p-10">
-            {/* Error/Success alerts */}
+            {/* Alerts */}
             {error && (
               <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 text-[11px] font-black animate-in slide-in-from-top-2">
                 <AlertTriangle size={18} className="shrink-0" />
@@ -217,88 +287,188 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
               </div>
             )}
 
-            <form onSubmit={handleAuth} className="space-y-4">
-              {activeTab === 'register' && (
-                <>
-                  <div className="flex flex-col items-center mb-8">
-                     <div 
-                      onClick={() => !isLoading && fileInputRef.current?.click()}
-                      className={`w-24 h-24 rounded-[2rem] border-2 border-dashed flex items-center justify-center cursor-pointer transition-all overflow-hidden bg-zinc-950 relative group ${error?.field === 'avatar' ? 'border-red-500' : 'border-zinc-800 hover:theme-border-primary'}`}
-                     >
-                       {avatarPreview ? (
-                         <img src={avatarPreview} className="w-full h-full object-cover group-hover:opacity-40 transition-opacity" />
-                       ) : (
-                         <Camera size={32} className="text-zinc-800 group-hover:theme-text-primary" />
-                       )}
-                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <span className="text-[8px] font-black text-white uppercase">تغيير الصورة</span>
-                       </div>
-                     </div>
-                     <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
-                     {error?.field === 'avatar' && <p className="text-[9px] text-red-500 font-bold mt-2">يجب اختيار صورة شخصية</p>}
-                  </div>
+            {/* --- LOGIN FORM --- */}
+            {activeTab === 'login' && (
+              <form onSubmit={handleLogin} className="space-y-4 animate-in slide-in-from-right duration-300">
+                <div className="relative group">
+                  <Mail className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
+                  <input 
+                    type="text" 
+                    value={identifier} 
+                    onChange={e => setIdentifier(e.target.value)} 
+                    placeholder="البريد الإلكتروني أو اسم المستخدم" 
+                    className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-4 text-white text-sm ltr outline-none focus:theme-border-primary-alpha" 
+                    required 
+                  />
+                </div>
 
-                  <div className="relative group">
-                    <UserIcon className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
-                    <input type="text" value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="الاسم الكامل" className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-4 text-white text-sm outline-none focus:theme-border-primary-alpha" required />
-                  </div>
+                <div className="relative group">
+                  <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
+                  <input 
+                    type={showPassword ? "text" : "password"} 
+                    value={password} 
+                    onChange={e => setPassword(e.target.value)} 
+                    placeholder="كلمة المرور" 
+                    className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-12 text-white text-sm ltr outline-none focus:theme-border-primary-alpha" 
+                    required 
+                  />
+                  <button type="button" onClick={()=>setShowPassword(!showPassword)} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700 hover:text-white">
+                    {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
+                  </button>
+                </div>
 
-                  <div className="relative group">
-                    <Hash className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
-                    <input type="text" value={username} onChange={e=>setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="اسم المستخدم (بالإنجليزي)" className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-4 text-white text-sm ltr outline-none focus:theme-border-primary-alpha" required />
-                  </div>
-                </>
-              )}
+                <div className="pt-4">
+                  {isLoading ? (
+                    <div className="text-center py-4">
+                      <Loader2 className="animate-spin theme-text-primary mx-auto mb-2" size={28} />
+                      <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">{statusMessage}</p>
+                    </div>
+                  ) : (
+                    <button type="submit" className="w-full py-5 theme-bg-primary text-black rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3">
+                      دخول آمن <Send size={20} />
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
 
-              <div className="relative group">
-                <Mail className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
-                <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="البريد الإلكتروني" className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-4 text-white text-sm ltr outline-none focus:theme-border-primary-alpha" required />
-              </div>
-
-              <div className="relative group">
-                <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
-                <input type={showPassword ? "text" : "password"} value={password} onChange={e=>setPassword(e.target.value)} placeholder="كلمة المرور" className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-12 text-white text-sm ltr outline-none focus:theme-border-primary-alpha" required />
-                <button type="button" onClick={()=>setShowPassword(!showPassword)} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700 hover:text-white">{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
-              </div>
-
-              {activeTab === 'register' && (
-                <>
-                  <div className="relative group">
-                    <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
-                    <input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="تأكيد كلمة المرور" className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-4 text-white text-sm ltr outline-none focus:theme-border-primary-alpha" required />
-                  </div>
-
-                  <div className="flex items-start gap-3 p-4 bg-zinc-900/40 border border-white/5 rounded-2xl">
-                    <div 
-                      className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 mt-0.5 transition-all cursor-pointer ${agreedToPolicies ? 'theme-bg-primary theme-border-primary' : 'border-zinc-800 bg-zinc-950'}`}
-                      onClick={() => setAgreedToPolicies(!agreedToPolicies)}
+            {/* --- REGISTER FORM --- */}
+            {activeTab === 'register' && (
+              <>
+                {/* Step 1: Method Selection */}
+                {registerStep === 'select' ? (
+                  <div className="flex flex-col gap-3 py-4 animate-in slide-in-from-right duration-300">
+                    <h3 className="text-center text-white font-black text-xs mb-2">اختر طريقة التسجيل المناسبة لك</h3>
+                    
+                    <button 
+                      type="button" 
+                      onClick={() => { setRegMethod('email'); setRegisterStep('form'); }} 
+                      className="p-4 bg-zinc-900 border border-white/5 rounded-[1.5rem] flex items-center gap-4 hover:border-lime-500 hover:bg-zinc-800 transition-all group active:scale-98"
                     >
-                      {agreedToPolicies && <CheckIcon size={12} className="text-black" strokeWidth={4} />}
-                    </div>
-                    <div className="text-[10px] font-bold text-zinc-500 leading-relaxed">
-                      أوافق على <span className="text-white underline cursor-pointer hover:theme-text-primary transition-colors" onClick={() => setLegalModal({ isOpen: true, type: 'privacy' })}>سياسة الخصوصية</span> و <span className="text-white underline cursor-pointer hover:theme-text-primary transition-colors" onClick={() => setLegalModal({ isOpen: true, type: 'terms' })}>شروط الاستخدام</span> الخاصة بمنصة Over Mods.
-                    </div>
-                  </div>
-                </>
-              )}
+                       <div className="w-10 h-10 rounded-xl bg-zinc-950 flex items-center justify-center text-zinc-500 group-hover:theme-text-primary transition-colors border border-white/5 shadow-lg">
+                          <Mail size={20} />
+                       </div>
+                       <div className="text-right flex-1">
+                          <h4 className="text-white font-black text-sm">البريد الإلكتروني</h4>
+                          <p className="text-zinc-600 text-[10px] font-bold mt-0.5">التسجيل التقليدي (يحتاج تفعيل)</p>
+                       </div>
+                       <div className="w-6 h-6 rounded-full bg-zinc-950 flex items-center justify-center group-hover:theme-bg-primary group-hover:text-black transition-all">
+                          <ArrowRight size={12} className="rotate-180" />
+                       </div>
+                    </button>
 
-              <div className="pt-4">
-                {isLoading ? (
-                  <div className="text-center py-4">
-                    <Loader2 className="animate-spin theme-text-primary mx-auto mb-2" size={28} />
-                    <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">{statusMessage}</p>
+                    <button 
+                      type="button" 
+                      onClick={() => { setRegMethod('username'); setRegisterStep('form'); }} 
+                      className="p-4 bg-zinc-900 border border-white/5 rounded-[1.5rem] flex items-center gap-4 hover:border-lime-500 hover:bg-zinc-800 transition-all group active:scale-98"
+                    >
+                       <div className="w-10 h-10 rounded-xl bg-zinc-950 flex items-center justify-center text-zinc-500 group-hover:theme-text-primary transition-colors border border-white/5 shadow-lg">
+                          <Hash size={20} />
+                       </div>
+                       <div className="text-right flex-1">
+                          <h4 className="text-white font-black text-sm">اسم المستخدم</h4>
+                          <p className="text-zinc-600 text-[10px] font-bold mt-0.5">تسجيل سريع ومباشر</p>
+                       </div>
+                       <div className="w-6 h-6 rounded-full bg-zinc-950 flex items-center justify-center group-hover:theme-bg-primary group-hover:text-black transition-all">
+                          <ArrowRight size={12} className="rotate-180" />
+                       </div>
+                    </button>
                   </div>
                 ) : (
-                  <button 
-                    type="submit" 
-                    className="w-full py-5 theme-bg-primary text-black rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"
-                  >
-                    {activeTab === 'login' ? 'دخول آمن' : 'بدء رحلة الإبداع'}
-                    <Send size={20} />
-                  </button>
+                  /* Step 2: Input Form */
+                  <form onSubmit={handleRegister} className="space-y-4 animate-in slide-in-from-left duration-300">
+                    <button 
+                      type="button" 
+                      onClick={() => setRegisterStep('select')} 
+                      className="flex items-center gap-2 text-zinc-500 hover:text-white font-black text-xs mb-6 transition-colors group"
+                    >
+                       <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" /> العودة للاختيار
+                    </button>
+
+                    <div className="flex flex-col items-center mb-8">
+                       <div 
+                        onClick={() => !isLoading && fileInputRef.current?.click()}
+                        className={`w-24 h-24 rounded-[2rem] border-2 border-dashed flex items-center justify-center cursor-pointer transition-all overflow-hidden bg-zinc-950 relative group ${error?.field === 'avatar' ? 'border-red-500' : 'border-zinc-800 hover:theme-border-primary'}`}
+                       >
+                         {avatarPreview ? (
+                           <img src={avatarPreview} className="w-full h-full object-cover group-hover:opacity-40 transition-opacity" />
+                         ) : (
+                           <Camera size={32} className="text-zinc-800 group-hover:theme-text-primary" />
+                         )}
+                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-[8px] font-black text-white uppercase">تغيير الصورة</span>
+                         </div>
+                       </div>
+                       <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
+                       {/* Removed strict error for avatar to allow default fallback */}
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="relative group">
+                        <UserIcon className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
+                        <input type="text" value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="الاسم الكامل" className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-4 text-white text-sm outline-none focus:theme-border-primary-alpha" required />
+                      </div>
+
+                      <div className="relative group">
+                        <Hash className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
+                        <input type="text" value={username} onChange={e=>setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="اسم المستخدم (بالإنجليزي)" className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-4 text-white text-sm ltr outline-none focus:theme-border-primary-alpha" required />
+                      </div>
+
+                      {/* Email Field - Visible only if method is email */}
+                      {regMethod === 'email' && (
+                        <div className="relative group animate-in slide-in-from-top-2">
+                          <Mail className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
+                          <input 
+                            type="email" 
+                            value={regEmail} 
+                            onChange={e=>setRegEmail(e.target.value)} 
+                            placeholder="البريد الإلكتروني *"
+                            className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-4 text-white text-sm ltr outline-none focus:theme-border-primary-alpha" 
+                            required 
+                          />
+                        </div>
+                      )}
+
+                      <div className="relative group">
+                        <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
+                        <input type="showPassword" value={password} onChange={e=>setPassword(e.target.value)} placeholder="كلمة المرور" className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-12 text-white text-sm ltr outline-none focus:theme-border-primary-alpha" required />
+                        <button type="button" onClick={()=>setShowPassword(!showPassword)} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-700 hover:text-white">{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+                      </div>
+
+                      <div className="relative group">
+                        <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
+                        <input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="تأكيد كلمة المرور" className="w-full bg-zinc-950 border border-white/5 rounded-2xl py-4 pr-12 pl-4 text-white text-sm ltr outline-none focus:theme-border-primary-alpha" required />
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-4 bg-zinc-900/40 border border-white/5 rounded-2xl mt-4">
+                      <div 
+                        className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 mt-0.5 transition-all cursor-pointer ${agreedToPolicies ? 'theme-bg-primary theme-border-primary' : 'border-zinc-800 bg-zinc-950'}`}
+                        onClick={() => setAgreedToPolicies(!agreedToPolicies)}
+                      >
+                        {agreedToPolicies && <CheckIcon size={12} className="text-black" strokeWidth={4} />}
+                      </div>
+                      <div className="text-[10px] font-bold text-zinc-500 leading-relaxed">
+                        أوافق على <span className="text-white underline cursor-pointer hover:theme-text-primary transition-colors" onClick={() => setLegalModal({ isOpen: true, type: 'privacy' })}>سياسة الخصوصية</span> و <span className="text-white underline cursor-pointer hover:theme-text-primary transition-colors" onClick={() => setLegalModal({ isOpen: true, type: 'terms' })}>شروط الاستخدام</span> الخاصة بمنصة Over Mods.
+                      </div>
+                    </div>
+
+                    <div className="pt-4">
+                      {isLoading ? (
+                        <div className="text-center py-4">
+                          <Loader2 className="animate-spin theme-text-primary mx-auto mb-2" size={28} />
+                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">{statusMessage}</p>
+                        </div>
+                      ) : (
+                        <button type="submit" className="w-full py-5 theme-bg-primary text-black rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3">
+                          بدء رحلة الإبداع <Send size={20} />
+                        </button>
+                      )}
+                    </div>
+                  </form>
                 )}
-              </div>
-            </form>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,3 @@
-
 import { initializeApp } from "firebase/app";
 import { 
   initializeFirestore, 
@@ -17,11 +16,15 @@ import {
   deleteDoc, 
   writeBatch, 
   onSnapshot,
-  orderBy,
-  limit,
-  serverTimestamp,
-  Timestamp,
-  addDoc
+  orderBy, 
+  limit, 
+  serverTimestamp, 
+  Timestamp, 
+  addDoc, 
+  deleteField,
+  persistentLocalCache, 
+  persistentMultipleTabManager,
+  Unsubscribe
 } from "firebase/firestore";
 import { 
   getAuth, 
@@ -34,7 +37,7 @@ import {
   sendPasswordResetEmail,
   updateEmail
 } from "firebase/auth";
-import { Mod, ModType, AdminPermissions, User, VerificationStatus, Notification, ModReport, ChatMessage, GameInvite, FriendRequest, NewsItem, Complaint, StaffMessage, MinecraftServer, Contest, QuestionProgress, QuestionChallenge, CommunityPost, PostComment } from "./types";
+import { Mod, ModType, AdminPermissions, User, UserRole, VerificationStatus, Notification, ModReport, ChatMessage, GameInvite, FriendRequest, NewsItem, Complaint, StaffMessage, MinecraftServer, Contest, QuestionProgress, QuestionChallenge, CommunityPost, PostComment, PopupWindowConfig } from "./types";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDiBxFISZbY3MveLqDo75T2ILMcH-BNEyQ",
@@ -46,10 +49,14 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+
+// Initialize Firestore with modern persistent cache settings
 export const firestore = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
-  useFetchStreams: false,
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
 });
+
 export const auth = getAuth(app);
 
 let cachedIP: string | null = null;
@@ -68,26 +75,30 @@ export class PlatformDB {
   private sanitizeData(obj: any, seen = new WeakSet()): any {
     if (obj === null || typeof obj !== 'object') return obj;
     
-    // Handle circular references
-    if (seen.has(obj)) return "[Circular Reference]";
-    seen.add(obj);
-
+    // Handle specific types
     if (obj instanceof Date) return obj.toISOString();
     if (obj instanceof Timestamp) return obj.toDate().toISOString();
+    if (obj instanceof File || obj instanceof Blob) return "[File/Blob]";
     
-    // Check for DOM nodes or React Events (common cause of circular errors)
-    if (obj.nodeType || (obj.nativeEvent && obj.preventDefault)) return "[DOM/Event Object]";
+    // DOM/Event/Global checks
+    if (obj instanceof Element || obj instanceof Event || (obj.nativeEvent && obj.preventDefault)) return "[DOM/Event Object]";
+    if (typeof window !== 'undefined' && (obj === window || obj === document)) return "[Global Object]";
+
+    // Circular check
+    if (seen.has(obj)) return "[Circular Reference]";
+    seen.add(obj);
 
     if (Array.isArray(obj)) {
       return obj.map(item => this.sanitizeData(item, seen));
     }
     
-    // Check for non-plain objects (like Firestore internal classes or Minified objects)
+    // Check for non-plain objects, especially minified Firestore internals
     const proto = Object.getPrototypeOf(obj);
     if (proto && proto.constructor && proto.constructor.name !== 'Object' && proto.constructor.name !== 'Array') {
-      // Allow simple objects, reject complex instances that might be circular or internal
-      if ('_firestore' in obj || 'firestore' in obj || proto.constructor.name.length <= 2) {
-         return "[Complex Object]"; 
+      const name = proto.constructor.name;
+      // Minified class names are often 1 or 2 chars (e.g., 'Ka', 'Y')
+      if (name.length <= 2 || '_firestore' in obj || 'firestore' in obj) {
+         return "[Internal Object]"; 
       }
     }
 
@@ -97,6 +108,8 @@ export class PlatformDB {
       const key = keys[i];
       const value = obj[key];
       if (value === undefined || typeof value === 'function') continue;
+      // Skip private fields often used in libraries
+      if (key.startsWith('_')) continue;
       sanitized[key] = this.sanitizeData(value, seen);
     }
     return sanitized;
@@ -136,6 +149,23 @@ export class PlatformDB {
 
   async getAllUsers(): Promise<User[]> {
     const snap = await getDocs(collection(firestore, 'users'));
+    return snap.docs.map(d => d.data() as User);
+  }
+
+  // Optimized Search: Uses database index instead of fetching all users
+  async searchUsers(term: string): Promise<User[]> {
+    const cleanTerm = term.toLowerCase().trim();
+    if (!cleanTerm) return [];
+    
+    // Prefix search for username
+    const q = query(
+      collection(firestore, 'users'),
+      where('username', '>=', cleanTerm),
+      where('username', '<=', cleanTerm + '\uf8ff'),
+      limit(20)
+    );
+    
+    const snap = await getDocs(q);
     return snap.docs.map(d => d.data() as User);
   }
 
@@ -210,8 +240,46 @@ export class PlatformDB {
     });
   }
 
+  // --- FAKE STATS LOGIC ---
+  async updateModFakeStats(modId: string, fakeStats: { views?: number; downloads?: number; likes?: number }) {
+    const modRef = doc(firestore, 'mods', modId);
+    await updateDoc(modRef, { fakeStats });
+  }
+
+  async resetModFakeStats(modId: string) {
+    const modRef = doc(firestore, 'mods', modId);
+    await updateDoc(modRef, { fakeStats: deleteField() });
+  }
+
+  async updatePostFakeLikes(postId: string, count: number) {
+    const postRef = doc(firestore, 'community_posts', postId);
+    await updateDoc(postRef, { fakeLikes: count });
+  }
+
+  async resetPostFakeLikes(postId: string) {
+    const postRef = doc(firestore, 'community_posts', postId);
+    await updateDoc(postRef, { fakeLikes: deleteField() });
+  }
+
+  // --- POPUP SYSTEM ---
+  async updatePopupSettings(config: PopupWindowConfig) {
+    await setDoc(doc(firestore, 'settings', 'popup_window'), config);
+  }
+
   // --- Auth & User ---
-  async register(email: string, pass: string, displayName: string, username: string, avatarFile: File) {
+  async register(email: string | null, pass: string, displayName: string, username: string, avatarFile: File) {
+    const cleanUsername = username.toLowerCase().trim();
+    try {
+      const userQuery = query(collection(firestore, 'users'), where('username', '==', cleanUsername));
+      const userSnap = await getDocs(userQuery);
+      if (!userSnap.empty) {
+        throw new Error("اسم المستخدم هذا محجوز مسبقاً. يرجى اختيار اسم آخر.");
+      }
+    } catch (e: any) {
+      if (e.message.includes("اسم المستخدم")) throw e;
+      console.warn("Username check skipped due to permissions or error:", e);
+    }
+
     let deviceId = localStorage.getItem('device_fp');
     if (!deviceId) {
       deviceId = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
@@ -224,16 +292,30 @@ export class PlatformDB {
       const devDoc = await getDoc(doc(firestore, 'fraud_registrations', deviceId));
       if (ipDoc.exists() || devDoc.exists()) isFraud = true;
     } catch (e) { console.warn("Fraud check error", e); }
-    const result = await createUserWithEmailAndPassword(auth, email, pass);
-    const avatarData = await this.resizeImage(avatarFile, 400, 400);
+
+    const isEmailRegister = email && email.trim().length > 0;
+    const authEmail = isEmailRegister ? email! : `u${Date.now()}${Math.floor(Math.random()*1000)}@noemail.overmods.com`;
+
+    const result = await createUserWithEmailAndPassword(auth, authEmail, pass);
+    
+    let avatarData = '';
+    if (avatarFile) {
+        avatarData = await this.resizeImage(avatarFile, 400, 400);
+    }
+    
+    if (!avatarData || avatarData.length === 0) {
+        avatarData = "https://ui-avatars.com/api/?background=random&name=" + encodeURIComponent(displayName);
+    }
+
     await updateProfile(result.user, { displayName });
     const giftPoints = isFraud ? 0 : 10;
+    
     const userData: User = {
       id: result.user.uid,
       numericId: Math.floor(1000000000 + Math.random() * 9000000000).toString(),
       displayName,
-      username: username.toLowerCase().trim(),
-      email,
+      username: cleanUsername,
+      email: isEmailRegister ? authEmail : undefined,
       avatar: avatarData,
       followers: 0,
       following: [],
@@ -246,14 +328,22 @@ export class PlatformDB {
       privacySettings: { showInSearch: true, showFollowersList: true, showJoinDate: true, privateCollections: false, showOnlineStatus: true, messagingPermission: 'everyone' },
       wallet: { gift: giftPoints, earned: 0 }
     };
-    await this.put('users', userData);
+    
+    await setDoc(doc(firestore, 'users', result.user.uid), this.sanitizeData({ ...userData, authEmail }));
+    
     if (!isFraud) {
        try {
          await setDoc(doc(firestore, 'fraud_registrations', ip.replace(/\./g, '_')), { userId: result.user.uid, timestamp: serverTimestamp() });
          await setDoc(doc(firestore, 'fraud_registrations', deviceId), { userId: result.user.uid, timestamp: serverTimestamp() });
        } catch (e) {}
     }
-    await sendEmailVerification(result.user);
+    
+    if (isEmailRegister) {
+      try {
+        await sendEmailVerification(result.user);
+      } catch (e) { console.warn("Verification email failed", e); }
+    }
+    
     return userData;
   }
 
@@ -297,8 +387,7 @@ export class PlatformDB {
     if (now - lastGrant >= fiveDays) { await updateDoc(userRef, { 'wallet.earned': increment(initialBalance), lastOwnerGrant: new Date().toISOString() }); }
   }
 
-  // --- Community Posts System ---
-
+  // ... (Community Post Methods remain mostly same)
   async createCommunityPost(post: Omit<CommunityPost, 'id' | 'createdAt' | 'likes' | 'comments'>) {
     const data: CommunityPost = {
       ...post,
@@ -326,7 +415,6 @@ export class PlatformDB {
       }
     });
 
-    // Cleanup expired posts lazily
     if (expiredIds.length > 0) {
       const batch = writeBatch(firestore);
       expiredIds.forEach(id => batch.delete(doc(firestore, 'community_posts', id)));
@@ -375,19 +463,15 @@ export class PlatformDB {
       const data = snap.data() as CommunityPost;
       const comments = data.comments || [];
       const commentIndex = comments.findIndex(c => c.id === commentId);
-      
       if (commentIndex === -1) return;
-      
       const comment = comments[commentIndex];
       const likes = comment.likes || [];
       let newLikes = [...likes];
-      
       if (likes.includes(userId)) {
         newLikes = newLikes.filter(id => id !== userId);
       } else {
         newLikes.push(userId);
       }
-      
       comments[commentIndex] = { ...comment, likes: newLikes };
       tx.update(ref, { comments: comments });
     });
@@ -396,8 +480,6 @@ export class PlatformDB {
   async deleteCommunityPost(postId: string) {
     await deleteDoc(doc(firestore, 'community_posts', postId));
   }
-
-  // --- End Community Posts ---
 
   async transferPoints(senderId: string, recipientIdentifier: string, amount: number) {
      if (amount <= 0) throw new Error("Amount must be positive");
@@ -470,17 +552,75 @@ export class PlatformDB {
     });
   }
   async adminDistributePoints(recipientId: string, amount: number) { const recipientRef = doc(firestore, 'users', recipientId); await updateDoc(recipientRef, { 'wallet.earned': increment(amount) }); await this.sendNotification(recipientId, "مكافأة خاصة", `لقد استلمت ${amount} نقطة من إدارة المنصة!`, 'points', 'Gift'); }
-  async login(email: string, pass: string) { 
-    const credentials = await signInWithEmailAndPassword(auth, email, pass); await updateDoc(doc(firestore, 'users', credentials.user.uid), { loginCount: increment(1) });
-    const userSnap = await getDoc(doc(firestore, 'users', credentials.user.uid)); if (userSnap.exists()) await this.checkOwnerRules({ id: userSnap.id, ...userSnap.data() } as User); return credentials.user; 
+  
+  async login(identifier: string, pass: string) { 
+    let loginEmail = identifier;
+    if (!identifier.includes('@')) {
+      const q = query(collection(firestore, 'users'), where('username', '==', identifier.toLowerCase().trim()));
+      const snap = await getDocs(q);
+      if (snap.empty) throw new Error("auth/user-not-found");
+      const data = snap.docs[0].data();
+      loginEmail = data.authEmail || data.email;
+      if (!loginEmail) throw new Error("auth/invalid-email");
+    }
+
+    const credentials = await signInWithEmailAndPassword(auth, loginEmail, pass); 
+    
+    await updateDoc(doc(firestore, 'users', credentials.user.uid), { 
+      loginCount: increment(1),
+      loginsSinceLastCode: increment(1) 
+    });
+    
+    const userSnap = await getDoc(doc(firestore, 'users', credentials.user.uid)); 
+    if (userSnap.exists()) await this.checkOwnerRules({ id: userSnap.id, ...userSnap.data() } as User); 
+    return credentials.user; 
   }
+
   async logout() { await signOut(auth); }
   async updateAccount(userId: string, data: Partial<User>) { await updateDoc(doc(firestore, 'users', userId), this.sanitizeData(data)); delete readCache[`users_${userId}`]; }
+  
   async resizeImage(file: File, maxWidth = 800, maxHeight = 800): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader(); reader.onload = (e) => { const img = new Image(); img.onload = () => { const canvas = document.createElement('canvas'); let width = img.width; let height = img.height; if (width > height) { if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; } } else { if (height > maxHeight) { width *= maxHeight / height; height = maxHeight; } } canvas.width = width; canvas.height = height; canvas.getContext('2d')?.drawImage(img, 0, 0, width, height); resolve(canvas.toDataURL('image/jpeg', 0.7)); }; img.src = e.target?.result as string; }; reader.onerror = reject; reader.readAsDataURL(file);
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            if (width > height) {
+              if (width > maxWidth) {
+                height *= maxWidth / width;
+                width = maxWidth;
+              }
+            } else {
+              if (height > maxHeight) {
+                width *= maxHeight / height;
+                height = maxHeight;
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                resolve(e.target?.result as string || "");
+                return;
+            }
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.7));
+          } catch (err) {
+            resolve(e.target?.result as string || "");
+          }
+        };
+        img.onerror = () => { resolve(""); };
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => { resolve(""); };
+      reader.readAsDataURL(file);
     });
   }
+
   generateShareCode(type: string): string { const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let code = type.charAt(0).toUpperCase(); for (let i = 0; i < 5; i++) code += chars.charAt(Math.floor(Math.random() * chars.length)); return code; }
   async getNotifications(userId: string): Promise<Notification[]> { const q = query(collection(firestore, 'notifications'), where('userId', '==', userId)); const snap = await getDocs(q); return snap.docs.map(d => ({ id: d.id, ...d.data() } as Notification)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); }
   async markNotificationRead(id: string) { await updateDoc(doc(firestore, 'notifications', id), { isRead: true }); }
@@ -503,159 +643,172 @@ export class PlatformDB {
   async banUser(userId: string, durationDays: number, reason: string) {
     const blockedUntil = new Date();
     blockedUntil.setDate(blockedUntil.getDate() + durationDays);
-    await updateDoc(doc(firestore, 'users', userId), {
-      isBlocked: true,
-      blockedReason: reason,
-      blockedUntil: blockedUntil.toISOString()
-    });
+    await updateDoc(doc(firestore, 'users', userId), { isBlocked: true, blockedReason: reason, blockedUntil: blockedUntil.toISOString() });
   }
 
-  async unbanUser(userId: string) {
-    await updateDoc(doc(firestore, 'users', userId), {
-      isBlocked: false,
-      blockedReason: null,
-      blockedUntil: null
-    });
-  }
-
-  async deleteUser(userId: string) {
-    await deleteDoc(doc(firestore, 'users', userId));
-  }
-
-  async resolveVerification(userId: string, status: VerificationStatus) {
-    const update: any = { verificationStatus: status };
-    if (status === 'verified') update.isVerified = true;
-    else if (status === 'none') update.isVerified = false;
-    await updateDoc(doc(firestore, 'users', userId), update);
-  }
-
-  async updateAuthEmail(email: string) {
-    if (auth.currentUser) {
-      await updateEmail(auth.currentUser, email);
-    }
-  }
-
-  async scheduleAccountDeletion(userId: string) {
-    await updateDoc(doc(firestore, 'users', userId), {
-      scheduledDeletion: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-    });
-  }
-
-  async getPurchasedMods(userId: string): Promise<Mod[]> {
-    const snap = await getDocs(collection(firestore, `users/${userId}/purchases`));
-    const modIds = snap.docs.map(d => d.data().modId);
-    if (modIds.length === 0) return [];
-    
-    const mods: Mod[] = [];
-    for (const mid of modIds) {
-      const m = await this.get('mods', mid);
-      if (m) mods.push(m as Mod);
-    }
-    return mods;
-  }
-
-  async hasPurchased(userId: string, modId: string): Promise<boolean> {
-    const snap = await getDoc(doc(firestore, `users/${userId}/purchases`, modId));
-    return snap.exists();
-  }
-
-  async purchaseMod(user: User, mod: Mod) {
-    const price = mod.price || 0;
-    if (price <= 0) return;
-    
-    await runTransaction(firestore, async (tx) => {
-      const userRef = doc(firestore, 'users', user.id);
-      const userSnap = await tx.get(userRef);
-      if (!userSnap.exists()) throw new Error("User not found");
-      const userData = userSnap.data() as User;
-      const totalPoints = (userData.wallet?.gift || 0) + (userData.wallet?.earned || 0);
-      
-      if (totalPoints < price) throw new Error("رصيد غير كافٍ");
-      
-      let newEarned = userData.wallet.earned;
-      let newGift = userData.wallet.gift;
-      
-      if (newEarned >= price) {
-        newEarned -= price;
-      } else {
-        const remainder = price - newEarned;
-        newEarned = 0;
-        newGift -= remainder; 
-      }
-      
-      tx.update(userRef, { 
-        'wallet.earned': newEarned, 
-        'wallet.gift': newGift 
-      });
-      
-      const purchaseRef = doc(firestore, `users/${user.id}/purchases`, mod.id);
-      tx.set(purchaseRef, { modId: mod.id, price, timestamp: serverTimestamp() });
-      
-      if (mod.publisherId) {
-        const pubRef = doc(firestore, 'users', mod.publisherId);
-        const earnings = price * (1 - COMMISSION_RATE);
-        tx.update(pubRef, { 'wallet.earned': increment(earnings) });
-      }
-    });
-  }
-
+  async unbanUser(userId: string) { await updateDoc(doc(firestore, 'users', userId), { isBlocked: false, blockedReason: null, blockedUntil: null }); }
+  async deleteUser(userId: string) { await deleteDoc(doc(firestore, 'users', userId)); }
+  async resolveVerification(userId: string, status: VerificationStatus) { const update: any = { verificationStatus: status }; if (status === 'verified') update.isVerified = true; else if (status === 'none') update.isVerified = false; await updateDoc(doc(firestore, 'users', userId), update); }
+  async updateAuthEmail(email: string) { if (auth.currentUser) { await updateEmail(auth.currentUser, email); } }
+  async scheduleAccountDeletion(userId: string) { await updateDoc(doc(firestore, 'users', userId), { scheduledDeletion: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }); }
+  
   async getRecentChats(userId: string): Promise<string[]> {
-    const q1 = query(collection(firestore, 'messages'), where('senderId', '==', userId), orderBy('createdAt', 'desc'), limit(20));
-    const q2 = query(collection(firestore, 'messages'), where('receiverId', '==', userId), orderBy('createdAt', 'desc'), limit(20));
-    const [s1, s2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+    // Queries without orderBy('createdAt') to avoid complex index requirements
+    const sentQ = query(collection(firestore, 'messages'), where('senderId', '==', userId), limit(50));
+    const receivedQ = query(collection(firestore, 'messages'), where('receiverId', '==', userId), limit(50));
     
+    const [sentSnap, receivedSnap] = await Promise.all([getDocs(sentQ), getDocs(receivedQ)]);
     const partners = new Set<string>();
-    s1.forEach(d => partners.add(d.data().receiverId));
-    s2.forEach(d => partners.add(d.data().senderId));
+    
+    // Sort logic moved to client:
+    const allMsgs = [...sentSnap.docs, ...receivedSnap.docs].map(d => d.data());
+    allMsgs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); // Descending
+
+    allMsgs.forEach(msg => {
+      if (msg.senderId === userId) partners.add(msg.receiverId);
+      else partners.add(msg.senderId);
+    });
+    
     return Array.from(partners);
   }
 
-  async getFriends(userId: string): Promise<string[]> {
-    const q1 = query(collection(firestore, 'friendships'), where('user1Id', '==', userId));
-    const q2 = query(collection(firestore, 'friendships'), where('user2Id', '==', userId));
-    const [s1, s2] = await Promise.all([getDocs(q1), getDocs(q2)]);
-    const friends = new Set<string>();
-    s1.forEach(d => friends.add(d.data().user2Id));
-    s2.forEach(d => friends.add(d.data().user1Id));
-    return Array.from(friends);
+  async getMessages(user1Id: string, user2Id: string): Promise<ChatMessage[]> {
+    const q1 = query(collection(firestore, 'messages'), where('senderId', '==', user1Id), where('receiverId', '==', user2Id));
+    const q2 = query(collection(firestore, 'messages'), where('senderId', '==', user2Id), where('receiverId', '==', user1Id));
+    
+    const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+    const msgs = [...snap1.docs, ...snap2.docs]
+      .map(d => ({ id: d.id, ...d.data() } as ChatMessage))
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      
+    return msgs;
+  }
+
+  // Live Listeners for Chat
+  subscribeToRecentChats(userId: string, callback: (partners: string[]) => void): Unsubscribe {
+    // We listen to sent and received messages separately
+    const sentQ = query(collection(firestore, 'messages'), where('senderId', '==', userId), limit(50));
+    const receivedQ = query(collection(firestore, 'messages'), where('receiverId', '==', userId), limit(50));
+
+    let sentData: any[] = [];
+    let receivedData: any[] = [];
+
+    const process = () => {
+      const allMsgs = [...sentData, ...receivedData];
+      allMsgs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const partners = new Set<string>();
+      allMsgs.forEach(msg => {
+        if (msg.senderId === userId) partners.add(msg.receiverId);
+        else partners.add(msg.senderId);
+      });
+      callback(Array.from(partners));
+    };
+
+    const unsub1 = onSnapshot(sentQ, (snap) => {
+      sentData = snap.docs.map(d => d.data());
+      process();
+    });
+    const unsub2 = onSnapshot(receivedQ, (snap) => {
+      receivedData = snap.docs.map(d => d.data());
+      process();
+    });
+
+    return () => { unsub1(); unsub2(); };
+  }
+
+  subscribeToMessages(user1Id: string, user2Id: string, callback: (msgs: ChatMessage[]) => void): Unsubscribe {
+    const q1 = query(collection(firestore, 'messages'), where('senderId', '==', user1Id), where('receiverId', '==', user2Id));
+    const q2 = query(collection(firestore, 'messages'), where('senderId', '==', user2Id), where('receiverId', '==', user1Id));
+
+    let msgs1: ChatMessage[] = [];
+    let msgs2: ChatMessage[] = [];
+
+    const process = () => {
+      const combined = [...msgs1, ...msgs2].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      callback(combined);
+    };
+
+    const unsub1 = onSnapshot(q1, (snap) => {
+      msgs1 = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage));
+      process();
+    });
+    const unsub2 = onSnapshot(q2, (snap) => {
+      msgs2 = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage));
+      process();
+    });
+
+    return () => { unsub1(); unsub2(); };
   }
 
   async getFriendRequests(userId: string): Promise<FriendRequest[]> {
-    const q = query(collection(firestore, 'friend_requests'), where('receiverId', '==', userId), where('status', '==', 'pending'));
+    const q = query(collection(firestore, 'friend_requests'), where('receiverId', '==', userId));
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest));
   }
 
-  async acceptFriendRequest(request: FriendRequest, currentUserName: string) {
-    const batch = writeBatch(firestore);
-    const friendshipRef = doc(collection(firestore, 'friendships'));
-    batch.set(friendshipRef, { user1Id: request.senderId, user2Id: request.receiverId, createdAt: new Date().toISOString() });
-    batch.delete(doc(firestore, 'friend_requests', request.id));
-    
-    const user1Ref = doc(firestore, 'users', request.senderId);
-    const user2Ref = doc(firestore, 'users', request.receiverId);
-    batch.update(user1Ref, { following: arrayUnion(request.receiverId), followers: increment(1) });
-    batch.update(user2Ref, { following: arrayUnion(request.senderId), followers: increment(1) });
-
-    await batch.commit();
-    
-    await this.sendNotification(request.senderId, 'قبول الصداقة', `قام ${currentUserName} بقبول طلب الصداقة`, 'friend_request', 'UserPlus');
+  subscribeToFriendRequests(userId: string, callback: (reqs: FriendRequest[]) => void): Unsubscribe {
+    const q = query(collection(firestore, 'friend_requests'), where('receiverId', '==', userId));
+    return onSnapshot(q, (snap) => {
+      callback(snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest)));
+    });
   }
 
-  async rejectFriendRequest(requestId: string) {
-    await deleteDoc(doc(firestore, 'friend_requests', requestId));
+  async getSentFriendRequests(userId: string): Promise<FriendRequest[]> {
+    const q = query(collection(firestore, 'friend_requests'), where('senderId', '==', userId));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest));
   }
+
+  subscribeToSentFriendRequests(userId: string, callback: (reqs: FriendRequest[]) => void): Unsubscribe {
+    const q = query(collection(firestore, 'friend_requests'), where('senderId', '==', userId));
+    return onSnapshot(q, (snap) => {
+      callback(snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest)));
+    });
+  }
+
+  async sendFriendRequest(sender: User, receiverId: string) {
+    await addDoc(collection(firestore, 'friend_requests'), {
+      senderId: sender.id,
+      senderName: sender.displayName,
+      senderUsername: sender.username,
+      senderAvatar: sender.avatar,
+      receiverId,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  async acceptFriendRequest(request: FriendRequest, userName: string) {
+    await addDoc(collection(firestore, 'friendships'), {
+      user1Id: request.senderId,
+      user2Id: request.receiverId,
+      createdAt: new Date().toISOString()
+    });
+    await deleteDoc(doc(firestore, 'friend_requests', request.id));
+    await this.sendNotification(request.senderId, 'طلب صداقة', `قام ${userName} بقبول طلب الصداقة`, 'friend_request', 'UserPlus');
+  }
+
+  async rejectFriendRequest(id: string) { await deleteDoc(doc(firestore, 'friend_requests', id)); }
+  async cancelFriendRequest(id: string) { await deleteDoc(doc(firestore, 'friend_requests', id)); }
 
   async getGameInvites(): Promise<GameInvite[]> {
-    const snap = await getDocs(query(collection(firestore, 'game_invites'), orderBy('createdAt', 'desc')));
+    const q = query(collection(firestore, 'game_invites'), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as GameInvite));
   }
 
-  async createGameInvite(host: User, mcName: string, version: string, expiresAt: string) {
-    await this.put('game_invites', {
-      hostId: host.id,
-      hostName: host.displayName,
-      hostAvatar: host.avatar,
+  subscribeToGameInvites(callback: (invites: GameInvite[]) => void): Unsubscribe {
+    const q = query(collection(firestore, 'game_invites'), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snap) => {
+      callback(snap.docs.map(d => ({ id: d.id, ...d.data() } as GameInvite)));
+    });
+  }
+
+  async createGameInvite(user: User, mcName: string, version: string, expiresAt: string) {
+    await addDoc(collection(firestore, 'game_invites'), {
+      hostId: user.id,
+      hostName: user.displayName,
+      hostAvatar: user.avatar,
       mcName,
       version,
       expiresAt,
@@ -663,46 +816,56 @@ export class PlatformDB {
     });
   }
 
-  async deleteGameInvite(inviteId: string) {
-    await deleteDoc(doc(firestore, 'game_invites', inviteId));
-  }
-
   async acceptGameInvite(userId: string, hostId: string, mcName: string) {
-    await this.sendMessage(userId, hostId, `مرحباً! لقد قبلت دعوة اللعب الخاصة بك. اسمي في اللعبة: ${mcName}`);
+    await this.sendMessage(userId, hostId, `مرحباً، أرغب في الانضمام لدعوتك! اسمي في اللعبة: ${mcName}`);
   }
 
-  async getMessages(userId1: string, userId2: string): Promise<ChatMessage[]> {
-    const chatId = [userId1, userId2].sort().join('_');
-    const q = query(collection(firestore, `chats/${chatId}/messages`), orderBy('createdAt', 'asc'));
+  async deleteGameInvite(id: string) { await deleteDoc(doc(firestore, 'game_invites', id)); }
+  
+  async postNews(news: Partial<NewsItem>) { await addDoc(collection(firestore, 'news'), { ...news, createdAt: new Date().toISOString() }); }
+  async deleteNews(id: string) { await deleteDoc(doc(firestore, 'news', id)); }
+  async deleteServer(id: string) { await deleteDoc(doc(firestore, 'servers', id)); }
+  async getStaffMessages(): Promise<StaffMessage[]> { const q = query(collection(firestore, 'staff_messages'), orderBy('createdAt', 'desc'), limit(50)); const snap = await getDocs(q); return snap.docs.map(d => ({ id: d.id, ...d.data() } as StaffMessage)).reverse(); }
+  async sendStaffMessage(user: User, text: string) { await addDoc(collection(firestore, 'staff_messages'), { userId: user.id, userName: user.displayName, userAvatar: user.avatar, userRole: user.role, text, createdAt: new Date().toISOString() }); }
+  async getSiteSettings() { const snap = await getDoc(doc(firestore, 'settings', 'site')); return snap.exists() ? snap.data() : {}; }
+  generateAdminCode(): string { return 'AC-' + Math.random().toString(36).substr(2, 8).toUpperCase(); }
+  async updatePermissions(userId: string, permissions: AdminPermissions, role: UserRole, code?: string) { const data: any = { adminPermissions: permissions, role }; if (code) data.adminCode = code; await updateDoc(doc(firestore, 'users', userId), data); }
+  async createComplaint(userId: string, username: string, subject: string, message: string) { await addDoc(collection(firestore, 'complaints'), { userId, username, subject, message, status: 'pending', createdAt: new Date().toISOString() }); }
+  async resolveComplaint(id: string) { await updateDoc(doc(firestore, 'complaints', id), { status: 'resolved' }); }
+  async deleteComplaint(id: string) { await deleteDoc(doc(firestore, 'complaints', id)); }
+  async setSecurityCode(userId: string, code: string, frequency: number) { await updateDoc(doc(firestore, 'users', userId), { securityCode: code, securityCodeFrequency: frequency, loginsSinceLastCode: 0 }); }
+  async removeSecurityCode(userId: string) { await updateDoc(doc(firestore, 'users', userId), { securityCode: deleteField(), securityCodeFrequency: deleteField(), loginsSinceLastCode: deleteField() }); }
+  async verifySecurityCheck(userId: string) { await updateDoc(doc(firestore, 'users', userId), { loginsSinceLastCode: 0 }); }
+
+  async getPurchasedMods(userId: string): Promise<Mod[]> {
+    const q = query(collection(firestore, 'purchases'), where('userId', '==', userId));
     const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage));
+    return snap.docs.map(d => d.data().modSnapshot as Mod);
+  }
+
+  async getFriends(userId: string): Promise<string[]> {
+    const q1 = query(collection(firestore, 'friendships'), where('user1Id', '==', userId));
+    const q2 = query(collection(firestore, 'friendships'), where('user2Id', '==', userId));
+    const [s1, s2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+    const friends = new Set<string>();
+    s1.docs.forEach(d => friends.add(d.data().user2Id));
+    s2.docs.forEach(d => friends.add(d.data().user1Id));
+    return Array.from(friends);
   }
 
   async sendMessage(senderId: string, receiverId: string, text: string) {
-    const chatId = [senderId, receiverId].sort().join('_');
-    const msg: ChatMessage = {
-      id: '',
+    await addDoc(collection(firestore, 'messages'), {
       senderId,
       receiverId,
       text,
       createdAt: new Date().toISOString()
-    };
-    await addDoc(collection(firestore, `chats/${chatId}/messages`), msg);
-    
-    await setDoc(doc(firestore, 'chats', chatId), {
-      participants: [senderId, receiverId],
-      lastMessage: text,
-      updatedAt: serverTimestamp()
-    }, { merge: true });
-
-    await addDoc(collection(firestore, 'messages'), msg);
+    });
   }
 
   async blockUser(blockerId: string, blockedId: string) {
     await updateDoc(doc(firestore, 'users', blockerId), {
       blockedUsers: arrayUnion(blockedId)
     });
-    await this.followUser(blockerId, blockedId); 
   }
 
   async unblockUser(blockerId: string, blockedId: string) {
@@ -717,138 +880,98 @@ export class PlatformDB {
     });
   }
 
-  async deleteServer(serverId: string) {
-    await deleteDoc(doc(firestore, 'servers', serverId));
+  async sendVerificationEmail() {
+    if (auth.currentUser) {
+      await sendEmailVerification(auth.currentUser);
+      return true;
+    }
+    return false;
   }
 
-  async getSiteSettings() {
-    const snap = await getDoc(doc(firestore, 'settings', 'general'));
-    return snap.exists() ? snap.data() : {};
+  async sendPasswordReset(email: string) {
+    await sendPasswordResetEmail(auth, email);
   }
 
-  async getStaffMessages(): Promise<StaffMessage[]> {
-    const q = query(collection(firestore, 'staff_messages'), orderBy('createdAt', 'asc'), limit(50));
+  async hasPurchased(userId: string, modId: string): Promise<boolean> {
+    const q = query(collection(firestore, 'purchases'), where('userId', '==', userId), where('modId', '==', modId));
     const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as StaffMessage));
-  }
-
-  async sendStaffMessage(user: User, text: string) {
-    await addDoc(collection(firestore, 'staff_messages'), {
-      userId: user.id,
-      userName: user.displayName,
-      userAvatar: user.avatar,
-      userRole: user.role,
-      text,
-      createdAt: new Date().toISOString()
-    });
-  }
-
-  async postNews(newsItem: Partial<NewsItem>) {
-    await this.put('news', { ...newsItem, createdAt: new Date().toISOString() });
-  }
-
-  async deleteNews(newsId: string) {
-    await deleteDoc(doc(firestore, 'news', newsId));
-  }
-
-  generateAdminCode(): string {
-    return Math.random().toString(36).substring(2, 10).toUpperCase();
-  }
-
-  async updatePermissions(userId: string, permissions: AdminPermissions, role: string, code?: string) {
-    const update: any = { adminPermissions: permissions, role };
-    if (code) update.adminCode = code;
-    await updateDoc(doc(firestore, 'users', userId), update);
-  }
-
-  async createComplaint(userId: string, username: string, subject: string, message: string) {
-    await this.put('complaints', {
-      userId, username, subject, message, status: 'pending', createdAt: new Date().toISOString()
-    });
-  }
-
-  async resolveComplaint(complaintId: string) {
-    await updateDoc(doc(firestore, 'complaints', complaintId), { status: 'resolved' });
-  }
-
-  async deleteComplaint(complaintId: string) {
-    await deleteDoc(doc(firestore, 'complaints', complaintId));
+    return !snap.empty;
   }
 
   async likeMod(modId: string, userId: string) {
-    const modRef = doc(firestore, 'mods', modId);
+    const ref = doc(firestore, 'mods', modId);
     await runTransaction(firestore, async (tx) => {
-      const snap = await tx.get(modRef);
+      const snap = await tx.get(ref);
       if (!snap.exists()) return;
       const data = snap.data() as Mod;
       const likes = data.likedBy || [];
       const dislikes = data.dislikedBy || [];
       
-      let newLikes = [...likes];
-      let newDislikes = [...dislikes];
-      let likeCount = data.stats.likes;
-      let dislikeCount = data.stats.dislikes;
+      let newLikes = likes;
+      let newDislikes = dislikes;
+      let likesCount = data.stats.likes;
+      let dislikesCount = data.stats.dislikes;
 
       if (likes.includes(userId)) {
-        newLikes = newLikes.filter(id => id !== userId);
-        likeCount--;
+        newLikes = likes.filter(id => id !== userId);
+        likesCount--;
       } else {
-        newLikes.push(userId);
-        likeCount++;
+        newLikes = [...likes, userId];
+        likesCount++;
         if (dislikes.includes(userId)) {
-          newDislikes = newDislikes.filter(id => id !== userId);
-          dislikeCount--;
+          newDislikes = dislikes.filter(id => id !== userId);
+          dislikesCount--;
         }
       }
       
-      tx.update(modRef, { 
+      tx.update(ref, { 
         likedBy: newLikes, 
         dislikedBy: newDislikes,
-        'stats.likes': likeCount,
-        'stats.dislikes': dislikeCount
+        'stats.likes': likesCount,
+        'stats.dislikes': dislikesCount
       });
     });
   }
 
   async dislikeMod(modId: string, userId: string) {
-    const modRef = doc(firestore, 'mods', modId);
+    const ref = doc(firestore, 'mods', modId);
     await runTransaction(firestore, async (tx) => {
-      const snap = await tx.get(modRef);
+      const snap = await tx.get(ref);
       if (!snap.exists()) return;
       const data = snap.data() as Mod;
       const likes = data.likedBy || [];
       const dislikes = data.dislikedBy || [];
       
-      let newLikes = [...likes];
-      let newDislikes = [...dislikes];
-      let likeCount = data.stats.likes;
-      let dislikeCount = data.stats.dislikes;
+      let newLikes = likes;
+      let newDislikes = dislikes;
+      let likesCount = data.stats.likes;
+      let dislikesCount = data.stats.dislikes;
 
       if (dislikes.includes(userId)) {
-        newDislikes = newDislikes.filter(id => id !== userId);
-        dislikeCount--;
+        newDislikes = dislikes.filter(id => id !== userId);
+        dislikesCount--;
       } else {
-        newDislikes.push(userId);
-        dislikeCount++;
+        newDislikes = [...dislikes, userId];
+        dislikesCount++;
         if (likes.includes(userId)) {
-          newLikes = newLikes.filter(id => id !== userId);
-          likeCount--;
+          newLikes = likes.filter(id => id !== userId);
+          likesCount--;
         }
       }
       
-      tx.update(modRef, { 
+      tx.update(ref, { 
         likedBy: newLikes, 
         dislikedBy: newDislikes,
-        'stats.likes': likeCount,
-        'stats.dislikes': dislikeCount
+        'stats.likes': likesCount,
+        'stats.dislikes': dislikesCount
       });
     });
   }
 
   async rateMod(modId: string, userId: string, rating: number) {
-    const modRef = doc(firestore, 'mods', modId);
+    const ref = doc(firestore, 'mods', modId);
     await runTransaction(firestore, async (tx) => {
-      const snap = await tx.get(modRef);
+      const snap = await tx.get(ref);
       if (!snap.exists()) return;
       const data = snap.data() as Mod;
       const ratedBy = data.ratedBy || {};
@@ -866,35 +989,64 @@ export class PlatformDB {
         totalScore = totalScore - oldRating + rating;
       }
       
-      const avg = count > 0 ? totalScore / count : 0;
+      const averageRating = count > 0 ? Number((totalScore / count).toFixed(1)) : 0;
       
-      tx.update(modRef, {
-        ratedBy: ratedBy,
-        'stats.ratingCount': count,
+      tx.update(ref, {
+        ratedBy,
         'stats.totalRatingScore': totalScore,
-        'stats.averageRating': Number(avg.toFixed(1))
+        'stats.ratingCount': count,
+        'stats.averageRating': averageRating
       });
     });
   }
 
   async recordDownload(userId: string, mod: Mod) {
-    await addDoc(collection(firestore, `users/${userId}/downloads`), {
+    await setDoc(doc(firestore, 'user_downloads', `${userId}_${mod.id}`), {
+      userId,
       modId: mod.id,
-      modTitle: mod.title,
-      downloadedAt: new Date().toISOString()
+      modSnapshot: mod,
+      timestamp: serverTimestamp()
     });
   }
 
-  async sendVerificationEmail(): Promise<boolean> {
-    if (auth.currentUser) {
-      await sendEmailVerification(auth.currentUser);
-      return true;
-    }
-    return false;
-  }
-
-  async sendPasswordReset(email: string) {
-    await sendPasswordResetEmail(auth, email);
+  async purchaseMod(user: User, mod: Mod) {
+    if (!mod.price) return;
+    const userRef = doc(firestore, 'users', user.id);
+    await runTransaction(firestore, async (tx) => {
+      const uSnap = await tx.get(userRef);
+      if (!uSnap.exists()) throw new Error("User not found");
+      const uData = uSnap.data() as User;
+      const balance = (uData.wallet?.gift || 0) + (uData.wallet?.earned || 0);
+      if (balance < mod.price!) throw new Error("رصيد غير كافي");
+      
+      let remainingCost = mod.price!;
+      let newGift = uData.wallet?.gift || 0;
+      let newEarned = uData.wallet?.earned || 0;
+      
+      if (newGift >= remainingCost) {
+        newGift -= remainingCost;
+      } else {
+        remainingCost -= newGift;
+        newGift = 0;
+        newEarned -= remainingCost;
+      }
+      
+      tx.update(userRef, { 'wallet.gift': newGift, 'wallet.earned': newEarned });
+      
+      const purchaseRef = doc(collection(firestore, 'purchases'));
+      tx.set(purchaseRef, {
+        userId: user.id,
+        modId: mod.id,
+        price: mod.price,
+        modSnapshot: mod,
+        timestamp: serverTimestamp()
+      });
+      
+      const publisherRef = doc(firestore, 'users', mod.publisherId);
+      const commission = mod.price! * COMMISSION_RATE;
+      const earnings = mod.price! - commission;
+      tx.update(publisherRef, { 'wallet.earned': increment(earnings) });
+    });
   }
 }
 

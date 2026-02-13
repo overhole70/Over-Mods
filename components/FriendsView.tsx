@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, UserPlus, MessageSquare, Send, Users, Gamepad2, X, Clock, Trash2, Loader2, Check, XCircle, UserCheck, CheckCircle2, Ban, Unlock, AlertTriangle, Plus, ShieldCheck, Globe, Calendar, CheckCircle, MoreVertical, Eye, User as UserIcon } from 'lucide-react';
+import { Search, UserPlus, MessageSquare, Send, Users, Gamepad2, X, Clock, Trash2, Loader2, Check, XCircle, UserCheck, CheckCircle2, Ban, Unlock, AlertTriangle, Plus, ShieldCheck, Globe, Calendar, CheckCircle, MoreVertical, Eye, User as UserIcon, ArrowLeft, ArrowRight } from 'lucide-react';
 import { User, ChatMessage, GameInvite, FriendRequest } from '../types';
 import { db } from '../db';
 
@@ -11,18 +10,30 @@ interface FriendsViewProps {
 
 const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'requests' | 'play' | 'blocked'>('chat');
+  const [requestsSubTab, setRequestsSubTab] = useState<'received' | 'sent'>('received');
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
   const [recentChatPartners, setRecentChatPartners] = useState<User[]>([]);
   const [blockedUsers, setBlockedUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showOptionsPopup, setShowOptionsPopup] = useState(false);
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [userToBlock, setUserToBlock] = useState<User | null>(null);
+  
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
+  
   const [invites, setInvites] = useState<GameInvite[]>([]);
   const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
+  const [sentRequests, setSentRequests] = useState<FriendRequest[]>([]);
+  const [myFriends, setMyFriends] = useState<string[]>([]);
+  
+  // Map for storing user details for requests
+  const [usersMap, setUsersMap] = useState<Record<string, User>>({});
+  
   const [isLobbyModalOpen, setIsLobbyModalOpen] = useState(false);
   const [acceptingInvite, setAcceptingInvite] = useState<GameInvite | null>(null);
   const [acceptMcName, setAcceptMcName] = useState('');
@@ -35,19 +46,97 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
 
   const [isLoading, setIsLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const searchTimeoutRef = useRef<any>(null);
 
+  // Initialize Data
   useEffect(() => {
-    if (activeTab === 'play') loadInvites();
-    if (activeTab === 'requests') loadRequests();
-    if (activeTab === 'chat') loadRecentChats();
+    db.getFriends(currentUser.id).then(setMyFriends);
     if (activeTab === 'blocked') loadBlockedUsers();
   }, [activeTab]);
 
+  // Real-time listeners
+  useEffect(() => {
+    let unsubChat: any;
+    let unsubInvites: any;
+    let unsubReqRec: any;
+    let unsubReqSent: any;
+
+    // Chat Listeners
+    if (activeTab === 'chat') {
+      setIsLoading(true);
+      unsubChat = db.subscribeToRecentChats(currentUser.id, async (partnerIds) => {
+        const friendIds = await db.getFriends(currentUser.id);
+        setMyFriends(friendIds); // Update friends list on chat update as well
+        
+        const allIds = Array.from(new Set([...partnerIds, ...friendIds]));
+        const visibleIds = allIds.filter(id => !currentUser.hiddenChats?.includes(id));
+        
+        const users = await Promise.all(visibleIds.map(id => db.get('users', id) as Promise<User>));
+        setRecentChatPartners(users.filter(u => !!u && !currentUser.blockedUsers?.includes(u.id)));
+        setIsLoading(false);
+      });
+    }
+
+    // Requests Listeners - Active in both 'requests' and 'chat' (to show status icons)
+    if (activeTab === 'requests' || activeTab === 'chat') {
+      unsubReqRec = db.subscribeToFriendRequests(currentUser.id, async (reqs) => {
+        const filtered = reqs.filter(r => !currentUser.blockedUsers?.includes(r.senderId));
+        setPendingRequests(filtered);
+        
+        // Fetch users for received requests (senders)
+        const ids = Array.from(new Set(filtered.map(r => r.senderId)));
+        if (ids.length > 0) {
+            const fetched: Record<string, User> = {};
+            await Promise.all(ids.map(async id => {
+                const u = await db.get('users', id);
+                if (u) fetched[id] = u as User;
+            }));
+            setUsersMap(prev => ({...prev, ...fetched}));
+        }
+      });
+
+      unsubReqSent = db.subscribeToSentFriendRequests(currentUser.id, async (reqs) => {
+        setSentRequests(reqs);
+        
+        // Fetch users for sent requests (receivers)
+        const ids = Array.from(new Set(reqs.map(r => r.receiverId)));
+        if (ids.length > 0) {
+            const fetched: Record<string, User> = {};
+            await Promise.all(ids.map(async id => {
+                const u = await db.get('users', id);
+                if (u) fetched[id] = u as User;
+            }));
+            setUsersMap(prev => ({...prev, ...fetched}));
+        }
+      });
+    }
+
+    // Invites Listener
+    if (activeTab === 'play') {
+      setIsLoading(true);
+      unsubInvites = db.subscribeToGameInvites((data) => {
+        const now = new Date().toISOString();
+        const validInvites = data.filter(inv => inv.expiresAt > now && !currentUser.blockedUsers?.includes(inv.hostId));
+        setInvites(validInvites);
+        setIsLoading(false);
+      });
+    }
+
+    return () => {
+      if (unsubChat) unsubChat();
+      if (unsubInvites) unsubInvites();
+      if (unsubReqRec) unsubReqRec();
+      if (unsubReqSent) unsubReqSent();
+    };
+  }, [activeTab]);
+
+  // Message Listener
   useEffect(() => {
     if (selectedUser) {
-      loadMessages();
-      const interval = setInterval(loadMessages, 4000); 
-      return () => clearInterval(interval);
+      const unsubMsgs = db.subscribeToMessages(currentUser.id, selectedUser.id, (msgs) => {
+        setMessages(msgs);
+      });
+      return () => unsubMsgs();
     }
   }, [selectedUser]);
 
@@ -56,95 +145,38 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
   }, [messages]);
 
   const loadBlockedUsers = async () => {
-    setIsLoading(true);
-    try {
-      const ids = currentUser.blockedUsers || [];
+    const ids = currentUser.blockedUsers || [];
+    if (ids.length > 0) {
       const users = await Promise.all(ids.map(id => db.get('users', id) as Promise<User>));
       setBlockedUsers(users.filter(u => !!u));
-    } finally {
-      setIsLoading(false);
+    } else {
+      setBlockedUsers([]);
     }
   };
 
-  const loadRecentChats = async () => {
-    if (activeTab !== 'chat') return;
-    setIsLoading(true);
-    try {
-      const partnerIds = await db.getRecentChats(currentUser.id);
-      const friendIds = await db.getFriends(currentUser.id);
-      const allIds = Array.from(new Set([...partnerIds, ...friendIds]));
-      
-      // Filter out partners that are in hiddenChats
-      const visibleIds = allIds.filter(id => !currentUser.hiddenChats?.includes(id));
-      
-      const users = await Promise.all(visibleIds.map(id => db.get('users', id) as Promise<User>));
-      setRecentChatPartners(users.filter(u => !!u && !currentUser.blockedUsers?.includes(u.id)));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadRequests = async () => {
-    setIsLoading(true);
-    try {
-      const reqs = await db.getFriendRequests(currentUser.id);
-      setPendingRequests(reqs.filter(r => !currentUser.blockedUsers?.includes(r.senderId)));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadInvites = async () => {
-    setIsLoading(true);
-    try {
-      const data = await db.getGameInvites();
-      const now = new Date().toISOString();
-      
-      const validInvites = [];
-      for (const inv of data) {
-        if (inv.expiresAt > now) {
-          if (!currentUser.blockedUsers?.includes(inv.hostId)) {
-            validInvites.push(inv);
-          }
-        } else {
-          db.deleteGameInvite(inv.id).catch(() => {});
-        }
-      }
-      setInvites(validInvites);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadMessages = async () => {
-    if (!selectedUser) return;
-    const msgs = await db.getMessages(currentUser.id, selectedUser.id);
-    setMessages(msgs);
-  };
-
-  const handleSearch = async () => {
-    if (!searchTerm.trim()) {
+  const handleSearchChange = (val: string) => {
+    setSearchTerm(val);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    
+    if (!val.trim()) {
       setSearchResults([]);
       return;
     }
-    setIsLoading(true);
-    try {
-      const all = await db.getAllUsers();
-      const term = searchTerm.toLowerCase().trim();
-      const filtered = all.filter(u => 
-        u.id !== currentUser.id && 
-        !(currentUser.blockedUsers || []).includes(u.id) && 
-        !(u.blockedUsers || []).includes(currentUser.id) && 
-        (
-          u.username?.toLowerCase().includes(term) || 
-          u.displayName?.toLowerCase().includes(term) ||
-          (u.numericId && u.numericId.includes(term))
-        )
-      );
-      setSearchResults(filtered);
-    } finally {
-      setIsLoading(false);
-    }
+
+    setIsSearching(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const results = await db.searchUsers(val);
+        const filtered = results.filter(u => 
+          u.id !== currentUser.id && 
+          !(currentUser.blockedUsers || []).includes(u.id) && 
+          !(u.blockedUsers || []).includes(currentUser.id)
+        );
+        setSearchResults(filtered);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 500); // 500ms debounce
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -154,9 +186,25 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
 
     const txt = messageText.trim();
     setMessageText('');
-    
     await db.sendMessage(currentUser.id, selectedUser.id, txt);
-    loadMessages();
+  };
+
+  const handleSendFriendRequest = async (targetUser: User) => {
+    try {
+      await db.sendFriendRequest(currentUser, targetUser.id);
+    } catch (err) {
+      alert('فشل إرسال الطلب');
+    }
+  };
+
+  const handleCancelRequest = async (id: string) => {
+    if (confirm('هل تريد إلغاء طلب الصداقة؟')) {
+      try {
+        await db.cancelFriendRequest(id);
+      } catch (err) {
+        alert('فشل إلغاء الطلب');
+      }
+    }
   };
 
   const handleBlockUser = async () => {
@@ -167,36 +215,31 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
     setShowBlockConfirm(false);
     setShowOptionsPopup(false);
     if (selectedUser?.id === target.id) setSelectedUser(null);
-    loadRecentChats();
     loadBlockedUsers();
   };
 
   const handleUnblock = async (userId: string) => {
     await db.unblockUser(currentUser.id, userId);
     loadBlockedUsers();
-    loadRecentChats();
     setShowOptionsPopup(false);
   };
 
   const handleDeleteChat = async () => {
     if (!selectedUser) return;
-    if (!confirm('هل تريد إخفاء هذه المحادثة من قائمتك؟ لن يتم حذف الرسائل، ولكن ستختفي المحادثة حتى يتم تبادل رسائل جديدة.')) return;
-    
+    if (!confirm('هل تريد إخفاء هذه المحادثة من قائمتك؟')) return;
     await db.hideChat(currentUser.id, selectedUser.id);
     setSelectedUser(null);
     setShowOptionsPopup(false);
-    loadRecentChats();
   };
 
   const handleAcceptRequest = async (req: FriendRequest) => {
     await db.acceptFriendRequest(req, currentUser.displayName);
-    loadRequests();
-    loadRecentChats();
+    const updatedFriends = await db.getFriends(currentUser.id);
+    setMyFriends(updatedFriends);
   };
 
   const handleRejectRequest = async (id: string) => {
     await db.rejectFriendRequest(id);
-    loadRequests();
   };
 
   const handleCreateLobby = async (e: React.FormEvent) => {
@@ -215,10 +258,9 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
       
       setIsLobbyModalOpen(false);
       setMcName('');
-      loadInvites();
-      alert('تم إنشاء دعوة اللعب بنجاح! ستظهر للجميع في قسم دعوات اللعب.');
+      alert('تم إنشاء دعوة اللعب بنجاح!');
     } catch (err) {
-      alert('فشل إنشاء الدعوة. يرجى المحاولة مرة أخرى.');
+      alert('فشل إنشاء الدعوة.');
     } finally {
       setIsCreatingLobby(false);
     }
@@ -234,7 +276,7 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
       setAcceptingInvite(null);
       setAcceptMcName('');
       setActiveTab('chat');
-      alert('تم قبول الدعوة وإرسال رسالة للمضيف. يمكنك الآن التحدث معه عبر الدردشة.');
+      alert('تم قبول الدعوة.');
     } catch (err) {
       alert('فشل قبول الدعوة.');
     } finally {
@@ -245,7 +287,6 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
   const handleDeleteInvite = async (id: string) => {
     if (!confirm('هل تريد حذف هذه الدعوة؟')) return;
     await db.deleteGameInvite(id);
-    loadInvites();
   };
 
   const canMessage = (user: User) => {
@@ -254,10 +295,9 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
 
     const permission = user.privacySettings?.messagingPermission || 'everyone';
     if (permission === 'none') return false;
-    if (permission === 'followers') {
-      return (currentUser.following || []).includes(user.id);
-    }
-    return true; 
+    if (permission === 'followers') return (currentUser.following || []).includes(user.id);
+    if (permission === 'friends') return myFriends.includes(user.id);
+    return true;
   };
 
   const TabButton = ({ id, label, icon: Icon, badge }: any) => (
@@ -305,11 +345,11 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
                  <input 
                    type="text" 
                    value={searchTerm} 
-                   onChange={e => { setSearchTerm(e.target.value); if(!e.target.value) setSearchResults([]); }}
-                   onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                   onChange={e => handleSearchChange(e.target.value)}
                    placeholder="ابحث عن أصدقاء..." 
                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-4 sm:py-5 pr-14 pl-6 text-white font-black text-sm outline-none focus:theme-border-primary transition-all"
                  />
+                 {isSearching && <Loader2 className="absolute left-4 top-1/2 -translate-y-1/2 animate-spin text-zinc-500" size={16} />}
               </div>
 
               <div className="flex-1 bg-[#0a0a0a] border border-white/5 rounded-[2.5rem] p-4 sm:p-6 overflow-y-auto no-scrollbar space-y-3 min-h-[300px]">
@@ -317,7 +357,11 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
                    {searchTerm ? 'نتائج البحث' : 'المحادثات الأخيرة'}
                  </h4>
                  
-                 {(searchTerm ? searchResults : recentChatPartners).map(user => (
+                 {(searchTerm ? searchResults : recentChatPartners).map(user => {
+                   const isSentRequest = sentRequests.some(req => req.receiverId === user.id);
+                   const showRequestButton = !canMessage(user) && !myFriends.includes(user.id) && !isSentRequest;
+
+                   return (
                    <div 
                      key={user.id} 
                      onClick={() => setSelectedUser(user)}
@@ -332,17 +376,36 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
                         </h5>
                         <p className="text-zinc-600 text-[9px] ltr truncate">@{user.username}</p>
                      </div>
-                     <div className="shrink-0">
+                     <div className="shrink-0 flex items-center gap-1">
                        {canMessage(user) ? (
                          <MessageSquare className="theme-text-primary opacity-40 group-hover/item:opacity-100 transition-opacity" size={16} />
                        ) : (
-                         <Ban size={14} className="text-zinc-800" />
+                         <div className="flex items-center gap-2">
+                            {showRequestButton && (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleSendFriendRequest(user); }}
+                                className="p-2 bg-zinc-800 text-zinc-400 hover:text-white hover:bg-lime-500 hover:text-black rounded-lg transition-all"
+                                title="إرسال طلب صداقة"
+                              >
+                                <UserPlus size={14} />
+                              </button>
+                            )}
+                            {isSentRequest && (
+                              <div className="p-2 bg-green-500/10 text-green-500 border border-green-500/20 rounded-lg animate-in zoom-in" title="تم الإرسال">
+                                <Check size={14} />
+                              </div>
+                            )}
+                            <Ban size={14} className="text-zinc-800" />
+                         </div>
                        )}
                      </div>
                    </div>
-                 ))}
+                 )})}
                  
-                 {isLoading && <div className="flex justify-center py-10"><Loader2 className="animate-spin theme-text-primary" /></div>}
+                 {isLoading && !isSearching && <div className="flex justify-center py-10"><Loader2 className="animate-spin theme-text-primary" /></div>}
+                 {!isLoading && !isSearching && recentChatPartners.length === 0 && !searchTerm && (
+                    <div className="text-center py-10 text-zinc-600 font-bold text-xs">لا توجد محادثات حديثة</div>
+                 )}
               </div>
            </div>
 
@@ -367,6 +430,15 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
                      </div>
                      
                      <div className="flex gap-2">
+                        {!canMessage(selectedUser) && !myFriends.includes(selectedUser.id) && !sentRequests.some(r => r.receiverId === selectedUser.id) && (
+                           <button 
+                             onClick={() => handleSendFriendRequest(selectedUser)} 
+                             className="p-2.5 theme-bg-primary text-black rounded-xl hover:theme-bg-primary-hover transition-all active:scale-90"
+                             title="إضافة صديق"
+                           >
+                             <UserPlus size={18} />
+                           </button>
+                        )}
                         <button 
                           onClick={() => {
                             setUserToBlock(selectedUser);
@@ -414,8 +486,21 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
                        </div>
                     </form>
                   ) : (
-                    <div className="p-6 bg-red-600/5 border-t border-red-500/20 text-center shrink-0">
-                       <p className="text-red-500 text-[10px] font-black uppercase tracking-tight">الدردشة مقيدة بسبب الخصوصية أو الحظر</p>
+                    <div className="p-6 bg-red-600/5 border-t border-red-500/20 text-center shrink-0 flex flex-col items-center gap-3">
+                       <p className="text-red-500 text-[10px] font-black uppercase tracking-tight">الدردشة مقيدة. يجب أن تكونا صديقين للمراسلة.</p>
+                       {!myFriends.includes(selectedUser.id) && !sentRequests.some(r => r.receiverId === selectedUser.id) && (
+                         <button 
+                           onClick={() => handleSendFriendRequest(selectedUser)}
+                           className="px-6 py-3 bg-zinc-800 hover:bg-white text-zinc-400 hover:text-black rounded-xl font-bold text-xs transition-all flex items-center gap-2"
+                         >
+                           <UserPlus size={16} /> إرسال طلب صداقة
+                         </button>
+                       )}
+                       {sentRequests.some(r => r.receiverId === selectedUser.id) && (
+                         <div className="px-6 py-3 bg-green-500/10 text-green-500 border border-green-500/20 rounded-xl font-bold text-xs flex items-center gap-2">
+                           <Check size={16} /> تم إرسال الطلب
+                         </div>
+                       )}
                     </div>
                   )}
 
@@ -489,39 +574,98 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
       )}
 
       {activeTab === 'requests' && (
-        <div className="space-y-6">
-           <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-3">
-             <UserPlus className="text-blue-500" size={24} /> طلبات الصداقة
-           </h3>
-           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pendingRequests.map(req => (
-                <div key={req.id} className="bg-zinc-900/50 border border-white/5 p-5 rounded-3xl flex items-center justify-between group hover:border-blue-500/20 transition-all">
-                   <div className="flex items-center gap-4">
-                      <img src={req.senderAvatar} className="w-10 h-10 rounded-xl object-cover shadow-lg border border-white/10" alt="" />
-                      <div className="text-right">
-                         <h5 className="text-white font-black text-sm">{req.senderName}</h5>
-                         <p className="text-zinc-500 text-[10px]">@{req.senderId}</p>
-                      </div>
-                   </div>
-                   <div className="flex gap-2 shrink-0">
-                      <button onClick={() => handleAcceptRequest(req)} className="p-3 theme-bg-primary text-black rounded-xl shadow-lg active:scale-95 transition-all"><Check size={18} /></button>
-                      <button onClick={() => handleRejectRequest(req.id)} className="p-3 bg-red-600/10 text-red-500 border border-red-500/10 rounded-xl hover:bg-red-600 hover:text-white transition-all"><XCircle size={18} /></button>
-                   </div>
-                </div>
-              ))}
-              
-              {pendingRequests.length === 0 && !isLoading && (
-                <div className="col-span-full py-20 text-center border-2 border-dashed border-zinc-900 rounded-[3rem] bg-zinc-900/10">
-                   <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-800">
-                      <UserPlus size={32} />
-                   </div>
-                   <h4 className="text-xl font-black text-zinc-600">لا توجد طلبات صداقة</h4>
-                   <p className="text-zinc-800 text-xs font-bold mt-2">سيظهر هنا الأشخاص الذين يرغبون في التواصل معك</p>
-                </div>
-              )}
-              
-              {isLoading && <div className="col-span-full flex justify-center py-10"><Loader2 className="animate-spin theme-text-primary" /></div>}
+        <div className="space-y-8">
+           <div className="flex gap-4 mb-4 bg-zinc-900/50 p-1.5 rounded-2xl w-fit mx-auto border border-white/5">
+              <button 
+                onClick={() => setRequestsSubTab('received')} 
+                className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${requestsSubTab === 'received' ? 'theme-bg-primary text-black shadow-lg' : 'text-zinc-500 hover:text-white'}`}
+              >
+                طلبات مستلمة
+              </button>
+              <button 
+                onClick={() => setRequestsSubTab('sent')} 
+                className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${requestsSubTab === 'sent' ? 'theme-bg-primary text-black shadow-lg' : 'text-zinc-500 hover:text-white'}`}
+              >
+                طلبات مرسلة
+              </button>
            </div>
+
+           {requestsSubTab === 'received' && (
+             <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+               <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-3">
+                 <UserPlus className="text-blue-500" size={24} /> طلبات مستلمة
+               </h3>
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {pendingRequests.map(req => {
+                    const user = usersMap[req.senderId];
+                    return (
+                    <div key={req.id} className="bg-zinc-900/50 border border-white/5 p-5 rounded-3xl flex items-center justify-between group hover:border-blue-500/20 transition-all">
+                       <div className="flex items-center gap-4">
+                          <img src={user ? user.avatar : req.senderAvatar} className="w-10 h-10 rounded-xl object-cover shadow-lg border border-white/10" alt="" />
+                          <div className="text-right">
+                             <h5 className="text-white font-black text-sm">{user ? user.displayName : req.senderName}</h5>
+                             <p className="text-zinc-500 text-[10px] ltr">@{user ? user.username : '...'}</p>
+                          </div>
+                       </div>
+                       <div className="flex gap-2 shrink-0">
+                          <button onClick={() => handleAcceptRequest(req)} className="p-3 theme-bg-primary text-black rounded-xl shadow-lg active:scale-95 transition-all"><Check size={18} /></button>
+                          <button onClick={() => handleRejectRequest(req.id)} className="p-3 bg-red-600/10 text-red-500 border border-red-500/10 rounded-xl hover:bg-red-600 hover:text-white transition-all"><XCircle size={18} /></button>
+                       </div>
+                    </div>
+                  )})}
+                  
+                  {pendingRequests.length === 0 && (
+                    <div className="col-span-full py-12 text-center border-2 border-dashed border-zinc-900 rounded-[3rem] bg-zinc-900/10">
+                       <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-800">
+                          <UserPlus size={24} />
+                       </div>
+                       <h4 className="text-lg font-black text-zinc-600">لا توجد طلبات جديدة</h4>
+                    </div>
+                  )}
+               </div>
+             </div>
+           )}
+
+           {requestsSubTab === 'sent' && (
+             <div className="space-y-6 animate-in slide-in-from-left-4 duration-300">
+               <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-3">
+                 <Send className="text-zinc-500" size={24} /> طلبات مرسلة
+               </h3>
+               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {sentRequests.map(req => {
+                    const user = usersMap[req.receiverId];
+                    return (
+                    <div key={req.id} className="bg-zinc-900/30 border border-white/5 p-5 rounded-3xl flex items-center justify-between group">
+                       <div className="flex items-center gap-4 opacity-70">
+                          <div className={`w-10 h-10 rounded-xl ${user ? 'object-cover' : 'bg-zinc-950 flex items-center justify-center text-zinc-700 border border-white/5'}`}>
+                             {user ? <img src={user.avatar} className="w-full h-full rounded-xl object-cover"/> : <UserIcon size={20} />}
+                          </div>
+                          <div className="text-right">
+                             <h5 className="text-white font-black text-sm">{user ? user.displayName : `مستخدم #${req.receiverId.slice(0, 5)}`}</h5>
+                             {user ? (
+                                <p className="text-zinc-500 text-[10px] ltr">@{user.username}</p>
+                             ) : (
+                                <span className="text-green-500 text-[9px] font-bold flex items-center gap-1"><Check size={10} /> تم الإرسال</span>
+                             )}
+                          </div>
+                       </div>
+                       <div className="flex gap-2 shrink-0">
+                          <button onClick={() => handleCancelRequest(req.id)} className="p-3 bg-zinc-900 text-zinc-500 border border-white/5 rounded-xl hover:text-red-500 transition-all" title="إلغاء الطلب"><X size={18} /></button>
+                       </div>
+                    </div>
+                  )})}
+                  
+                  {sentRequests.length === 0 && (
+                    <div className="col-span-full py-12 text-center border-2 border-dashed border-zinc-900 rounded-[3rem] bg-zinc-900/10">
+                       <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-800">
+                          <Send size={24} />
+                       </div>
+                       <h4 className="text-lg font-black text-zinc-600">لم ترسل أي طلبات</h4>
+                    </div>
+                  )}
+               </div>
+             </div>
+           )}
         </div>
       )}
 
@@ -596,94 +740,6 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
               
               {isLoading && <div className="col-span-full flex justify-center py-10"><Loader2 className="animate-spin theme-text-primary" /></div>}
            </div>
-        </div>
-      )}
-
-      {activeTab === 'blocked' && (
-        <div className="space-y-6">
-           <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-3">
-             <Ban className="text-red-500" size={24} /> قائمة المحظورين
-           </h3>
-           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {blockedUsers.map(user => (
-                <div key={user.id} className="bg-zinc-900/50 border border-white/5 p-5 rounded-3xl flex items-center justify-between">
-                   <div className="flex items-center gap-4">
-                      <img src={user.avatar} className="w-10 h-10 rounded-xl object-cover grayscale opacity-50 shadow-lg border border-white/10" alt="" />
-                      <div className="text-right">
-                         <h5 className="text-zinc-400 font-black text-sm">{user.displayName}</h5>
-                         <p className="text-zinc-600 text-[10px]">@{user.username}</p>
-                      </div>
-                   </div>
-                   <button 
-                     onClick={() => handleUnblock(user.id)}
-                     className="px-4 py-2 bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-[10px] font-black transition-all active:scale-95"
-                   >
-                     إلغاء الحظر
-                   </button>
-                </div>
-              ))}
-
-              {blockedUsers.length === 0 && !isLoading && (
-                <div className="col-span-full py-20 text-center border-2 border-dashed border-zinc-900 rounded-[3rem] bg-zinc-900/10">
-                   <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-800">
-                      <CheckCircle size={32} />
-                   </div>
-                   <h4 className="text-xl font-black text-zinc-600">لا يوجد مستخدمون محظورون</h4>
-                   <p className="text-zinc-800 text-xs font-bold mt-2">قائمتك خالية من الحظر، هذا رائع!</p>
-                </div>
-              )}
-              
-              {isLoading && <div className="col-span-full flex justify-center py-10"><Loader2 className="animate-spin theme-text-primary" /></div>}
-           </div>
-        </div>
-      )}
-
-      {/* Accept Invite Prompt Modal */}
-      {acceptingInvite && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/95 backdrop-blur-xl animate-in fade-in duration-300" onClick={() => setAcceptingInvite(null)}></div>
-          <div className="bg-[#0a0a0a] border border-white/10 p-8 sm:p-10 rounded-[3rem] w-full max-md relative z-10 shadow-2xl animate-in zoom-in duration-300 overflow-hidden text-center">
-             <div className="absolute top-0 right-0 w-full h-1 theme-bg-primary-alpha opacity-30"></div>
-             
-             <div className="w-20 h-20 theme-bg-primary-alpha theme-text-primary rounded-3xl flex items-center justify-center mx-auto mb-6">
-                <Gamepad2 size={40} />
-             </div>
-
-             <h3 className="text-2xl font-black text-white mb-2">قبول دعوة اللعب</h3>
-             <p className="text-zinc-500 text-sm font-medium mb-8">أدخل اسمك في ماين كرافت ليتمكن المضيف من التعرف عليك.</p>
-
-             <form onSubmit={handleConfirmAcceptInvite} className="space-y-6">
-                <div className="space-y-2">
-                   <input 
-                     type="text" 
-                     value={acceptMcName}
-                     onChange={e => setAcceptMcName(e.target.value)}
-                     className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-4 px-6 text-white font-black text-sm outline-none focus:theme-border-primary transition-all shadow-inner text-center"
-                     placeholder="Minecraft Name..."
-                     required
-                     autoFocus
-                   />
-                </div>
-
-                <div className="flex flex-col gap-3">
-                   <button 
-                    type="submit" 
-                    disabled={isLoading}
-                    className="w-full py-5 theme-bg-primary text-black rounded-2xl font-black text-lg active:scale-95 transition-all shadow-xl theme-shadow-primary-soft flex items-center justify-center gap-3 disabled:opacity-50"
-                   >
-                     {isLoading ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={24} />}
-                     تأكيد الانضمام
-                   </button>
-                   <button 
-                    type="button" 
-                    onClick={() => setAcceptingInvite(null)}
-                    className="w-full py-4 text-zinc-500 font-black text-sm hover:text-white transition-colors"
-                   >
-                     إلغاء
-                   </button>
-                </div>
-             </form>
-          </div>
         </div>
       )}
 
