@@ -34,10 +34,26 @@ const CompleteProfileView: React.FC<CompleteProfileViewProps> = ({ currentUser, 
     }
   };
 
+  const isRestrictedName = (name: string) => {
+    if (currentUser.email === 'overmods1@gmail.com') return false;
+    const forbidden = ['over mods', 'over_mods', 'overmods'];
+    const lower = name.toLowerCase();
+    return forbidden.some(f => lower.includes(f));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!displayName.trim()) return setError("الاسم الكامل مطلوب");
+    
+    if (isRestrictedName(displayName)) {
+      return setError("عذراً، هذا الاسم محجوز للمسؤول فقط");
+    }
+
     if (!username.trim() || username.length < 3) return setError("اسم المستخدم قصير جداً");
+    
+    if (isRestrictedName(username)) {
+      return setError("عذراً، اسم المستخدم هذا محجوز للمسؤول فقط");
+    }
     
     // Password is optional for Google users, but if provided, validate length
     if (password && password.length < 6) return setError("كلمة المرور يجب أن تكون 6 أحرف على الأقل");
@@ -54,7 +70,11 @@ const CompleteProfileView: React.FC<CompleteProfileViewProps> = ({ currentUser, 
       });
       onComplete(updatedUser as User);
     } catch (err: any) {
-      setError(err.message || "حدث خطأ أثناء إكمال الملف الشخصي");
+      if (err.message && err.message.includes('Failed to fetch')) {
+        setError("فشل الاتصال بالخادم. يرجى التحقق من الإنترنت.");
+      } else {
+        setError(err.message || "حدث خطأ أثناء إكمال الملف الشخصي");
+      }
     } finally {
       setIsLoading(false);
     }

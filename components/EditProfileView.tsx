@@ -60,13 +60,17 @@ const EditProfileView: React.FC<EditProfileViewProps> = ({ currentUser, onUpdate
     if (msg.includes('auth/invalid-email')) {
       return 'البريد الإلكتروني المدخل غير صالح.';
     }
+    if (msg.includes('Failed to fetch')) {
+      return 'فشل الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.';
+    }
     return 'حدث خطأ أثناء حفظ البيانات. يرجى المحاولة لاحقاً.';
   };
 
   const isRestrictedName = (name: string) => {
-    const forbidden = "overmods";
-    const cleanName = name.toLowerCase().replace(/\s+/g, '');
-    return cleanName.includes(forbidden);
+    if (currentUser.email === 'overmods1@gmail.com') return false;
+    const forbidden = ['over mods', 'over_mods', 'overmods'];
+    const lower = name.toLowerCase();
+    return forbidden.some(f => lower.includes(f));
   };
 
   const handleUsernameChange = (val: string) => {
@@ -104,7 +108,12 @@ const EditProfileView: React.FC<EditProfileViewProps> = ({ currentUser, onUpdate
     if (isSaving) return;
 
     if (isRestrictedName(displayName)) {
-      setError('عذراً، هذا الاسم محجوز للنظام');
+      setError('عذراً، هذا الاسم محجوز للمسؤول فقط');
+      return;
+    }
+
+    if (isRestrictedName(username)) {
+      setError('عذراً، اسم المستخدم هذا محجوز للمسؤول فقط');
       return;
     }
 
@@ -118,16 +127,14 @@ const EditProfileView: React.FC<EditProfileViewProps> = ({ currentUser, onUpdate
     setSuccess(false);
 
     try {
-      // 1. Sync Email with Firebase Auth if it changed
-      if (email.trim() !== currentUser.email) {
-        await db.updateAuthEmail(email.trim());
-      }
+      // Email update disabled as per request
+      // if (email.trim() !== currentUser.email) { ... }
 
       // 2. Update Firestore profile
       const updateData = {
         displayName: displayName.trim(),
         username: username.toLowerCase().trim(),
-        email: email.trim(),
+        // email: email.trim(), // Email is read-only
         bio: bio.trim(),
         avatar: avatarPreview,
         banner: bannerPreview,
@@ -249,9 +256,8 @@ const EditProfileView: React.FC<EditProfileViewProps> = ({ currentUser, onUpdate
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mr-2">البريد الإلكتروني</label>
                   <input 
-                    type="email" value={email} onChange={(e) => setEmail(e.target.value)} 
-                    className="w-full bg-zinc-900/40 border border-white/5 rounded-2xl py-5 px-6 outline-none transition-all text-white font-black text-base ltr focus:border-lime-500/50 shadow-inner" 
-                    required
+                    type="email" value={email} readOnly disabled
+                    className="w-full bg-zinc-900/20 border border-white/5 rounded-2xl py-5 px-6 outline-none text-zinc-500 font-black text-base ltr cursor-not-allowed" 
                   />
                 </div>
               </div>

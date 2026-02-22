@@ -151,6 +151,13 @@ export class PlatformDB {
 
   async completeGoogleProfile(userId: string, data: { displayName: string, username: string, password?: string, avatarFile?: File }) {
     const cleanUsername = data.username.toLowerCase().trim();
+    const email = auth.currentUser?.email;
+
+    // Check restricted names
+    if (this.isRestrictedName(data.displayName, email) || this.isRestrictedName(cleanUsername, email)) {
+      throw new Error("عذراً، هذا الاسم محجوز للمسؤول فقط.");
+    }
+
     const userQuery = query(collection(firestore, 'users'), where('username', '==', cleanUsername));
     const userSnap = await getDocs(userQuery);
     if (!userSnap.empty) {
@@ -332,11 +339,26 @@ export class PlatformDB {
   async getUserIP(): Promise<string> {
     if (cachedIP) return cachedIP;
     if (ipRequestPromise) return ipRequestPromise;
-    ipRequestPromise = fetch('https://api64.ipify.org?format=json')
-      .then(res => res.json())
+    
+    const fetchWithTimeout = (url: string, ms: number) => {
+        const controller = new AbortController();
+        const promise = fetch(url, { signal: controller.signal });
+        const timeout = setTimeout(() => controller.abort(), ms);
+        return promise.finally(() => clearTimeout(timeout));
+    };
+
+    ipRequestPromise = fetchWithTimeout('https://api.ipify.org?format=json', 3000)
+      .then(res => {
+        if (!res.ok) throw new Error('Network response was not ok');
+        return res.json();
+      })
       .then(data => { cachedIP = data.ip; return data.ip; })
-      .catch(() => "guest_ip")
+      .catch((e) => {
+        console.warn("IP Fetch failed, using fallback", e);
+        return "guest_" + Math.random().toString(36).substr(2, 9);
+      })
       .finally(() => { ipRequestPromise = null; });
+      
     return ipRequestPromise;
   }
 
@@ -436,8 +458,22 @@ export class PlatformDB {
   }
 
   // --- Auth & User ---
+  // --- Helper for Restricted Names ---
+  isRestrictedName(name: string, email?: string | null) {
+    if (email === 'overmods1@gmail.com') return false;
+    const forbidden = ['over mods', 'over_mods', 'overmods'];
+    const lower = name.toLowerCase();
+    return forbidden.some(f => lower.includes(f));
+  }
+
   async register(email: string | null, pass: string, displayName: string, username: string, avatarFile: File) {
     const cleanUsername = username.toLowerCase().trim();
+    
+    // Check restricted names
+    if (this.isRestrictedName(displayName, email) || this.isRestrictedName(cleanUsername, email)) {
+      throw new Error("عذراً، هذا الاسم محجوز للمسؤول فقط.");
+    }
+
     try {
       const userQuery = query(collection(firestore, 'users'), where('username', '==', cleanUsername));
       const userSnap = await getDocs(userQuery);
@@ -764,7 +800,17 @@ export class PlatformDB {
   }
 
   async logout() { await signOut(auth); }
-  async updateAccount(userId: string, data: Partial<User>) { await updateDoc(doc(firestore, 'users', userId), this.sanitizeData(data)); delete readCache[`users_${userId}`]; }
+  async updateAccount(userId: string, data: Partial<User>) {
+    const email = auth.currentUser?.email;
+    if (data.displayName && this.isRestrictedName(data.displayName, email)) {
+       throw new Error("عذراً، هذا الاسم محجوز للمسؤول فقط.");
+    }
+    if (data.username && this.isRestrictedName(data.username, email)) {
+       throw new Error("عذراً، هذا الاسم محجوز للمسؤول فقط.");
+    }
+    await updateDoc(doc(firestore, 'users', userId), this.sanitizeData(data));
+    delete readCache[`users_${userId}`];
+  }
   
   async resizeImage(file: File, maxWidth = 800, maxHeight = 800): Promise<string> {
     return new Promise((resolve) => {

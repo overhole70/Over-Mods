@@ -72,7 +72,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     if (msg.includes('auth/user-not-found') || msg.includes('auth/wrong-password') || msg.includes('auth/invalid-credential')) {
       return 'بيانات الدخول غير صحيحة. تأكد من البريد/اسم المستخدم وكلمة المرور.';
     }
-    if (msg.includes('auth/network-request-failed')) {
+    if (msg.includes('auth/network-request-failed') || msg.includes('Failed to fetch')) {
       return 'فشل الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.';
     }
     
@@ -146,14 +146,32 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     }
   };
 
+  const isRestrictedName = (name: string) => {
+    // If registering with admin email, allow
+    if (regMethod === 'email' && regEmail.trim() === 'overmods1@gmail.com') return false;
+    
+    const forbidden = ['over mods', 'over_mods', 'overmods'];
+    const lower = name.toLowerCase();
+    return forbidden.some(f => lower.includes(f));
+  };
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMsg(null);
 
     if (!displayName.trim()) return setError({ field: 'displayName', message: 'يرجى كتابة اسمك' });
+    
+    if (isRestrictedName(displayName)) {
+      return setError({ field: 'displayName', message: 'عذراً، هذا الاسم محجوز للمسؤول فقط' });
+    }
+
     if (!username.trim() || username.length < 3) return setError({ field: 'username', message: 'اسم المستخدم قصير جداً' });
     
+    if (isRestrictedName(username)) {
+      return setError({ field: 'username', message: 'عذراً، اسم المستخدم هذا محجوز للمسؤول فقط' });
+    }
+
     // Validate email ONLY if method is email
     if (regMethod === 'email') {
        if (!regEmail.trim()) return setError({ field: 'email', message: 'البريد الإلكتروني مطلوب' });
