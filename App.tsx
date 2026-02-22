@@ -114,6 +114,15 @@ export default function App() {
             }
             const verified = auth.currentUser?.emailVerified || false;
             const updatedUser = { ...profile, email: firebaseUser.email || '', emailVerified: verified };
+            
+            // Check for incomplete profile (Google Auth)
+            if (updatedUser.profileCompleted === false) {
+               setCurrentUser(updatedUser);
+               setCurrentView('complete-profile');
+               setIsInitialized(true);
+               return;
+            }
+
             setCurrentUser(updatedUser);
             
             // Trigger preload with user context ONLY if not already loaded

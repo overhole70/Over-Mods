@@ -35,7 +35,11 @@ import {
   updateProfile,
   sendEmailVerification,
   sendPasswordResetEmail,
-  updateEmail
+  updateEmail,
+  GoogleAuthProvider,
+  signInWithPopup,
+  linkWithCredential,
+  EmailAuthProvider
 } from "firebase/auth";
 import { Mod, ModType, AdminPermissions, User, UserRole, VerificationStatus, Notification, ModReport, ChatMessage, GameInvite, FriendRequest, NewsItem, Complaint, StaffMessage, MinecraftServer, Contest, QuestionProgress, QuestionChallenge, CommunityPost, PostComment, PopupWindowConfig } from "./types";
 
@@ -109,6 +113,106 @@ export class PlatformDB {
       sanitized[key] = this.sanitizeData(value, seen);
     }
     return sanitized;
+  }
+
+  async loginWithGoogle() {
+    const provider = new GoogleAuthProvider();
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      const userDoc = await getDoc(doc(firestore, 'users', user.uid));
+      
+      if (!userDoc.exists()) {
+        const minimalUser = {
+          id: user.uid,
+          email: user.email,
+          googleLinked: true,
+          profileCompleted: false,
+          createdAt: new Date().toISOString(),
+          role: 'User',
+          displayName: user.displayName || '',
+          avatar: user.photoURL || ''
+        };
+        await setDoc(doc(firestore, 'users', user.uid), minimalUser);
+        return { user: minimalUser, isNew: true };
+      } else {
+        const userData = userDoc.data();
+        if (userData.profileCompleted === false) {
+          return { user: { id: userDoc.id, ...userData }, isNew: true };
+        }
+        return { user: { id: userDoc.id, ...userData }, isNew: false };
+      }
+    } catch (error) {
+      console.error("Google Sign-In Error:", error);
+      throw error;
+    }
+  }
+
+  async completeGoogleProfile(userId: string, data: { displayName: string, username: string, password?: string, avatarFile?: File }) {
+    const cleanUsername = data.username.toLowerCase().trim();
+    const userQuery = query(collection(firestore, 'users'), where('username', '==', cleanUsername));
+    const userSnap = await getDocs(userQuery);
+    if (!userSnap.empty) {
+        const existing = userSnap.docs[0];
+        if (existing.id !== userId) throw new Error("اسم المستخدم هذا محجوز مسبقاً.");
+    }
+
+    if (data.password && auth.currentUser) {
+        try {
+          const credential = EmailAuthProvider.credential(auth.currentUser.email!, data.password);
+          await linkWithCredential(auth.currentUser, credential);
+        } catch (e) {
+             console.warn("Link credential failed", e);
+        }
+    }
+
+    let avatarData = '';
+    if (data.avatarFile) {
+        avatarData = await this.resizeImage(data.avatarFile, 400, 400);
+    } else if (auth.currentUser?.photoURL) {
+        avatarData = auth.currentUser.photoURL;
+    }
+
+    const updateData = {
+        displayName: data.displayName,
+        username: cleanUsername,
+        avatar: avatarData,
+        role: 'User',
+        wallet: { gift: 10, earned: 0 },
+        profileCompleted: true,
+        verificationStatus: 'none',
+        isVerified: false,
+        numericId: Math.floor(1000000000 + Math.random() * 9000000000).toString(),
+        privacySettings: { showInSearch: true, showFollowersList: true, showJoinDate: true, privateCollections: false, showOnlineStatus: true, messagingPermission: 'everyone' }
+    };
+
+    await updateDoc(doc(firestore, 'users', userId), this.sanitizeData(updateData));
+    
+    // Fraud check logic for wallet gift
+    let deviceId = localStorage.getItem('device_fp');
+    if (!deviceId) {
+      deviceId = 'dev_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+      localStorage.setItem('device_fp', deviceId);
+    }
+    const ip = await this.getUserIP();
+    let isFraud = false;
+    try {
+      const ipDoc = await getDoc(doc(firestore, 'fraud_registrations', ip.replace(/\./g, '_')));
+      const devDoc = await getDoc(doc(firestore, 'fraud_registrations', deviceId));
+      if (ipDoc.exists() || devDoc.exists()) isFraud = true;
+    } catch (e) {}
+
+    if (isFraud) {
+       await updateDoc(doc(firestore, 'users', userId), { 'wallet.gift': 0 });
+    } else {
+       try {
+         await setDoc(doc(firestore, 'fraud_registrations', ip.replace(/\./g, '_')), { userId: userId, timestamp: serverTimestamp() });
+         await setDoc(doc(firestore, 'fraud_registrations', deviceId), { userId: userId, timestamp: serverTimestamp() });
+       } catch (e) {}
+    }
+    
+    return { id: userId, ...updateData };
   }
 
   async get(coll: string, id: string) {

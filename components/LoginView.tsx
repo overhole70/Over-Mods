@@ -162,8 +162,10 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
 
     if (password.length < 6) return setError({ field: 'password', message: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' });
     if (password !== confirmPassword) return setError({ field: 'confirm', message: 'كلمات المرور غير متطابقة' });
-    // Avatar is optional but recommended; if null, DB will generate a default one.
-    // if (!avatarFile) return setError({ field: 'avatar', message: 'يجب اختيار صورة شخصية' }); 
+    
+    // Avatar is mandatory
+    if (!avatarFile) return setError({ field: 'avatar', message: 'يجب اختيار صورة شخصية' }); 
+    
     if (!agreedToPolicies) return setError({ message: 'يجب الموافقة على الشروط' });
 
     setIsLoading(true);
@@ -242,6 +244,40 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setStatusMessage('جاري الاتصال بجوجل...');
+    setError(null);
+    try {
+      const { user, isNew } = await db.loginWithGoogle();
+      if (isNew) {
+         // Profile incomplete -> App.tsx handles redirection via onAuthChange
+         // But onAuthChange might fire before this resolves?
+         // Actually onAuthChange fires automatically on sign-in.
+         // So we just wait.
+      } else {
+         // Existing user
+         onLogin(user as User);
+      }
+    } catch (err: any) {
+      triggerShake();
+      setError({ message: translateAuthError(err) });
+      setIsLoading(false);
+    }
+  };
+
+  const GoogleButton = () => (
+    <button 
+      type="button"
+      onClick={handleGoogleLogin}
+      disabled={isLoading}
+      className="w-full py-4 bg-white text-black rounded-2xl font-black text-sm shadow-lg hover:bg-zinc-200 transition-all flex items-center justify-center gap-3 mb-6 active:scale-95"
+    >
+      <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
+      متابعة باستخدام Google
+    </button>
+  );
+
   return (
     <div className="min-h-[85vh] flex items-center justify-center p-4">
       <div className={`max-w-md w-full transition-transform duration-500 ${shake ? 'animate-shake' : ''}`}>
@@ -290,6 +326,7 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
             {/* --- LOGIN FORM --- */}
             {activeTab === 'login' && (
               <form onSubmit={handleLogin} className="space-y-4 animate-in slide-in-from-right duration-300">
+                <GoogleButton />
                 <div className="relative group">
                   <Mail className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-700 group-focus-within:theme-text-primary transition-colors" size={18} />
                   <input 
@@ -338,7 +375,8 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                 {/* Step 1: Method Selection */}
                 {registerStep === 'select' ? (
                   <div className="flex flex-col gap-3 py-4 animate-in slide-in-from-right duration-300">
-                    <h3 className="text-center text-white font-black text-xs mb-2">اختر طريقة التسجيل المناسبة لك</h3>
+                    <GoogleButton />
+                    <h3 className="text-center text-white font-black text-xs mb-2">أو اختر طريقة التسجيل المناسبة لك</h3>
                     
                     <button 
                       type="button" 
