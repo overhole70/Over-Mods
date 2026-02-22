@@ -43,6 +43,17 @@ export default function App() {
   const idleTimerRef = useRef<any>(null);
   const initialLoadDone = useRef(false);
 
+  const [isBootLoading, setIsBootLoading] = useState(false); // Removed blocking state
+  const [preloadedCommunityPosts, setPreloadedCommunityPosts] = useState<any[]>([]);
+  const [preloadedUsers, setPreloadedUsers] = useState<User[]>([]);
+  const [preloadedReports, setPreloadedReports] = useState<any[]>([]);
+  const [preloadedComplaints, setPreloadedComplaints] = useState<any[]>([]);
+  
+  // Pagination State
+  const [lastModDoc, setLastModDoc] = useState<any>(null);
+  const [hasMoreMods, setHasMoreMods] = useState(true);
+  const [isLoadingMoreMods, setIsLoadingMoreMods] = useState(false);
+
   const trackUserInterest = (category: string) => {
     if (!category) return;
     const stored = localStorage.getItem('user_interests');
@@ -102,9 +113,16 @@ export default function App() {
               return;
             }
             const verified = auth.currentUser?.emailVerified || false;
-            setCurrentUser({ ...profile, email: firebaseUser.email || '', emailVerified: verified });
+            const updatedUser = { ...profile, email: firebaseUser.email || '', emailVerified: verified };
+            setCurrentUser(updatedUser);
+            
+            // Trigger preload with user context ONLY if not already loaded
+            if (!initialLoadDone.current) {
+               initializeData(updatedUser);
+            }
+          } else {
+             setIsInitialized(true);
           }
-          setIsInitialized(true); 
         }, (err) => {
           console.error("Profile snapshot error:", err);
           setIsInitialized(true);
@@ -116,17 +134,13 @@ export default function App() {
         setUserDownloads([]);
         setIsInitialized(true);
         
-        // Strict First Time Check: If not visited/logged-in before, force login view
-        if (!localStorage.getItem('has_visited_app')) {
-           setCurrentView('login');
-        }
+        // Force login view if not authenticated
+        setCurrentView('login');
+        
+        // Do NOT preload data for guests
+        // initializeData(null);
       }
     });
-
-    if (!initialLoadDone.current) {
-      initializeData();
-      initialLoadDone.current = true;
-    }
 
     return () => { 
       authUnsubscribe(); 
@@ -134,31 +148,61 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (currentUser?.isVerified && initialLoadDone.current) {
-      initializeData();
-    }
-  }, [currentUser?.isVerified]);
-
-  const initializeData = async () => {
+  const initializeData = async (userContext: User | null) => {
     if (isRefreshing) return;
     setIsRefreshing(true);
+    
     try {
-      const [m, s, n] = await Promise.all([
-        db.getAll('mods', 100),
-        db.getAll('servers', 24),
+      // 1. Initial Light Load (Home Page Data Only)
+      const [modsData, s, n] = await Promise.all([
+        db.getModsPaginated(10), // Fetch only first 10 mods
+        db.getAll('servers', 10), // Limit servers
         db.getAll('news', 1)
       ]);
-      setMods(m as Mod[] || []);
+
+      setMods(modsData.mods);
+      setLastModDoc(modsData.lastDoc);
+      setHasMoreMods(!!modsData.lastDoc);
+      
       setServers(s as MinecraftServer[] || []);
       if (n && n.length > 0) setNewsSnippet(n[0] as NewsItem);
+
       setIsOffline(false);
     } catch (e) {
+      console.error("Boot load failed", e);
       setIsOffline(true);
     } finally {
       setIsRefreshing(false);
+      initialLoadDone.current = true;
     }
   };
+
+  const loadMoreMods = async () => {
+    if (isLoadingMoreMods || !hasMoreMods || !lastModDoc) return;
+    setIsLoadingMoreMods(true);
+    try {
+      const nextBatch = await db.getModsPaginated(10, lastModDoc);
+      setMods(prev => [...prev, ...nextBatch.mods]);
+      setLastModDoc(nextBatch.lastDoc);
+      setHasMoreMods(!!nextBatch.lastDoc);
+    } catch (e) {
+      console.error("Load more failed", e);
+    } finally {
+      setIsLoadingMoreMods(false);
+    }
+  };
+
+  // Background Preload (Non-blocking)
+  useEffect(() => {
+    if (initialLoadDone.current) {
+      const timer = setTimeout(() => {
+        // Silent background fetch - limit to 20 items to avoid heavy load
+        db.getCommunityPosts(20).then((res: any) => setPreloadedCommunityPosts(res.posts || [])).catch(() => {});
+        // Do NOT preload users list to save bandwidth, only load when needed
+      }, 3000); // Start 3 seconds after boot
+      return () => clearTimeout(timer);
+    }
+  }, [initialLoadDone.current]);
 
   const handleNavClick = (view: string) => {
     resetIdleTimer();
@@ -182,7 +226,9 @@ export default function App() {
   const isAdmin = currentUser?.email === ADMIN_EMAIL || currentUser?.role === 'Admin';
   const isLoginPage = currentView === 'login';
 
-  if (!isInitialized) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin theme-text-primary" size={48} /></div>;
+  // Removed blocking loading screens
+  // if (isBootLoading) return ...
+  // if (!isInitialized) return ...
 
   if (isLockedBySecurity && currentUser) {
     return (
@@ -235,7 +281,7 @@ export default function App() {
               searchTerm={searchTerm}
               setSearchTerm={setSearchTerm}
               isRefreshing={isRefreshing}
-              initializeData={initializeData}
+              initializeData={() => initializeData(currentUser)}
               trackUserInterest={trackUserInterest}
               isRTL={isRTL}
               isAdminAuthenticated={isAdminAuthenticated}
@@ -245,6 +291,9 @@ export default function App() {
               editingItem={editingItem}
               setEditingItem={setEditingItem}
               db={db}
+              onLoadMoreMods={loadMoreMods}
+              hasMoreMods={hasMoreMods}
+              isLoadingMoreMods={isLoadingMoreMods}
             />
           </div>
         </main>

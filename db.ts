@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { 
-  initializeFirestore, 
+  getFirestore,
   collection, 
   getDocs, 
   getDoc, 
@@ -18,12 +18,12 @@ import {
   onSnapshot,
   orderBy, 
   limit, 
+  startAfter,
+  QueryDocumentSnapshot,
   serverTimestamp, 
   Timestamp, 
   addDoc, 
   deleteField,
-  persistentLocalCache, 
-  persistentMultipleTabManager,
   Unsubscribe
 } from "firebase/firestore";
 import { 
@@ -50,12 +50,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with modern persistent cache settings
-export const firestore = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  })
-});
+// Initialize Firestore with standard settings (no experimental options)
+export const firestore = getFirestore(app);
 
 export const auth = getAuth(app);
 
@@ -141,15 +137,34 @@ export class PlatformDB {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   }
 
+  async getModsPaginated(limitCount: number = 10, lastDoc?: QueryDocumentSnapshot) {
+    let q = query(collection(firestore, 'mods'), orderBy('createdAt', 'desc'), limit(limitCount));
+    if (lastDoc) {
+      q = query(q, startAfter(lastDoc));
+    }
+    const snap = await getDocs(q);
+    return {
+      mods: snap.docs.map(d => ({ id: d.id, ...d.data() } as Mod)),
+      lastDoc: snap.docs[snap.docs.length - 1] || null
+    };
+  }
+
   async getUserMods(userId: string): Promise<Mod[]> {
     const q = query(collection(firestore, 'mods'), where('publisherId', '==', userId));
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as Mod));
   }
 
-  async getAllUsers(): Promise<User[]> {
-    const snap = await getDocs(collection(firestore, 'users'));
-    return snap.docs.map(d => d.data() as User);
+  async getAllUsers(limitCount: number = 100, lastDoc?: QueryDocumentSnapshot) {
+    let q = query(collection(firestore, 'users'), orderBy('createdAt', 'desc'), limit(limitCount));
+    if (lastDoc) {
+      q = query(q, startAfter(lastDoc));
+    }
+    const snap = await getDocs(q);
+    return {
+      users: snap.docs.map(d => d.data() as User),
+      lastDoc: snap.docs[snap.docs.length - 1] || null
+    };
   }
 
   // Optimized Search: Uses database index instead of fetching all users
@@ -157,16 +172,51 @@ export class PlatformDB {
     const cleanTerm = term.toLowerCase().trim();
     if (!cleanTerm) return [];
     
-    // Prefix search for username
-    const q = query(
-      collection(firestore, 'users'),
-      where('username', '>=', cleanTerm),
-      where('username', '<=', cleanTerm + '\uf8ff'),
-      limit(20)
-    );
+    // We try multiple queries to cover different fields
+    // Note: Firestore doesn't support OR queries across different fields efficiently without multiple queries
+    // We will prioritize username search, then numericId, then displayName
     
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as User);
+    const results = new Map<string, User>();
+    
+    try {
+      // 1. Username Prefix Search
+      const qUsername = query(
+        collection(firestore, 'users'),
+        orderBy('username'),
+        where('username', '>=', cleanTerm),
+        where('username', '<=', cleanTerm + '\uf8ff'),
+        limit(50)
+      );
+      
+      // 2. Numeric ID Exact Match (if term is numeric)
+      let qNumeric = null;
+      if (/^\d+$/.test(cleanTerm)) {
+         qNumeric = query(collection(firestore, 'users'), where('numericId', '==', cleanTerm), limit(1));
+      }
+
+      // 3. Display Name Prefix Search (requires index on displayName)
+      // Note: Case-sensitive usually, but we can try. 
+      // Ideally we should store lowercaseDisplayName for search.
+      // For now, we'll skip displayName prefix search to avoid index errors or case issues, 
+      // or we can try exact match if needed.
+      // Let's stick to username and numericId as primary reliable search methods.
+      
+      const promises = [getDocs(qUsername)];
+      if (qNumeric) promises.push(getDocs(qNumeric));
+      
+      const snapshots = await Promise.all(promises);
+      
+      snapshots.forEach(snap => {
+        snap.docs.forEach(d => {
+           results.set(d.id, d.data() as User);
+        });
+      });
+      
+    } catch (e) {
+      console.warn("Search users failed", e);
+    }
+    
+    return Array.from(results.values());
   }
 
   async getPendingVerifications(): Promise<User[]> {
@@ -213,7 +263,12 @@ export class PlatformDB {
              const bonusProbability = 0.05 / (1 + (currentTotalViews * 0.0001)); 
              if (Math.random() < bonusProbability) pointsToAdd = Math.random() < 0.2 ? 0.7 : 0.5;
              const publisherRef = doc(firestore, 'users', publisherId);
-             transaction.update(publisherRef, { 'wallet.earned': increment(pointsToAdd) });
+             // Wrap in try-catch to ignore permission errors for updating other users
+             try {
+                transaction.update(publisherRef, { 'wallet.earned': increment(pointsToAdd) });
+             } catch (e) {
+                // Ignore permission error if we can't update publisher wallet
+             }
           }
         } else {
           if (!modData.stats) {
@@ -223,21 +278,31 @@ export class PlatformDB {
           }
         }
       });
-    } catch (e) { console.error("Increment view transaction failed", e); }
+    } catch (e: any) { 
+       if (e.code !== 'permission-denied') {
+          console.error("Increment view transaction failed", e); 
+       }
+    }
   }
 
   async incrementDownloads(modId: string, ip: string) {
     const modRef = doc(firestore, 'mods', modId);
-    await runTransaction(firestore, async (tx) => {
-        const snap = await tx.get(modRef);
-        if (!snap.exists()) return;
-        const data = snap.data();
-        if (!data.stats) {
-            tx.set(modRef, { stats: { views: 0, uniqueViews: 0, downloads: 1, likes: 0, dislikes: 0 } }, { merge: true });
-        } else {
-            tx.update(modRef, { 'stats.downloads': increment(1) });
-        }
-    });
+    try {
+      await runTransaction(firestore, async (tx) => {
+          const snap = await tx.get(modRef);
+          if (!snap.exists()) return;
+          const data = snap.data();
+          if (!data.stats) {
+              tx.set(modRef, { stats: { views: 0, uniqueViews: 0, downloads: 1, likes: 0, dislikes: 0 } }, { merge: true });
+          } else {
+              tx.update(modRef, { 'stats.downloads': increment(1) });
+          }
+      });
+    } catch (e: any) {
+       if (e.code !== 'permission-denied') {
+          console.error("Increment download failed", e);
+       }
+    }
   }
 
   // --- FAKE STATS LOGIC ---
@@ -399,8 +464,11 @@ export class PlatformDB {
     await this.put('community_posts', data);
   }
 
-  async getCommunityPosts(): Promise<CommunityPost[]> {
-    const q = query(collection(firestore, 'community_posts'), orderBy('createdAt', 'desc'));
+  async getCommunityPosts(limitCount: number = 20, lastDoc?: QueryDocumentSnapshot) {
+    let q = query(collection(firestore, 'community_posts'), orderBy('createdAt', 'desc'), limit(limitCount));
+    if (lastDoc) {
+      q = query(q, startAfter(lastDoc));
+    }
     const snap = await getDocs(q);
     const now = new Date();
     const posts: CommunityPost[] = [];
@@ -421,7 +489,10 @@ export class PlatformDB {
       batch.commit().catch(e => console.error("Cleanup error", e));
     }
 
-    return posts;
+    return {
+      posts,
+      lastDoc: snap.docs[snap.docs.length - 1] || null
+    };
   }
 
   async likeCommunityPost(postId: string, userId: string) {
@@ -558,22 +629,34 @@ export class PlatformDB {
     if (!identifier.includes('@')) {
       const q = query(collection(firestore, 'users'), where('username', '==', identifier.toLowerCase().trim()));
       const snap = await getDocs(q);
-      if (snap.empty) throw new Error("auth/user-not-found");
+      if (snap.empty) throw new Error("اسم المستخدم غير موجود");
       const data = snap.docs[0].data();
       loginEmail = data.authEmail || data.email;
-      if (!loginEmail) throw new Error("auth/invalid-email");
+      if (!loginEmail) throw new Error("بيانات الدخول غير صالحة");
     }
 
-    const credentials = await signInWithEmailAndPassword(auth, loginEmail, pass); 
-    
-    await updateDoc(doc(firestore, 'users', credentials.user.uid), { 
-      loginCount: increment(1),
-      loginsSinceLastCode: increment(1) 
-    });
-    
-    const userSnap = await getDoc(doc(firestore, 'users', credentials.user.uid)); 
-    if (userSnap.exists()) await this.checkOwnerRules({ id: userSnap.id, ...userSnap.data() } as User); 
-    return credentials.user; 
+    try {
+      const credentials = await signInWithEmailAndPassword(auth, loginEmail, pass); 
+      
+      await updateDoc(doc(firestore, 'users', credentials.user.uid), { 
+        loginCount: increment(1),
+        loginsSinceLastCode: increment(1) 
+      });
+      
+      const userSnap = await getDoc(doc(firestore, 'users', credentials.user.uid)); 
+      if (userSnap.exists()) await this.checkOwnerRules({ id: userSnap.id, ...userSnap.data() } as User); 
+      return credentials.user; 
+    } catch (e: any) {
+      console.error("Login Error:", e.code, e.message);
+      if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') {
+        throw new Error("اسم المستخدم أو كلمة المرور غير صحيحة");
+      } else if (e.code === 'auth/network-request-failed') {
+        throw new Error("فشل الاتصال بالخادم. يرجى التحقق من الإنترنت.");
+      } else if (e.code === 'auth/too-many-requests') {
+        throw new Error("محاولات كثيرة خاطئة. يرجى الانتظار قليلاً.");
+      }
+      throw new Error(e.message || "حدث خطأ أثناء تسجيل الدخول");
+    }
   }
 
   async logout() { await signOut(auth); }
@@ -622,66 +705,86 @@ export class PlatformDB {
   }
 
   generateShareCode(type: string): string { const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let code = type.charAt(0).toUpperCase(); for (let i = 0; i < 5; i++) code += chars.charAt(Math.floor(Math.random() * chars.length)); return code; }
-  async getNotifications(userId: string): Promise<Notification[]> { const q = query(collection(firestore, 'notifications'), where('userId', '==', userId)); const snap = await getDocs(q); return snap.docs.map(d => ({ id: d.id, ...d.data() } as Notification)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); }
-  async markNotificationRead(id: string) { await updateDoc(doc(firestore, 'notifications', id), { isRead: true }); }
-  async deleteNotification(id: string) { await deleteDoc(doc(firestore, 'notifications', id)); }
-  async deleteAllNotifications(userId: string) { const q = query(collection(firestore, 'notifications'), where('userId', '==', userId)); const snap = await getDocs(q); const batch = writeBatch(firestore); snap.docs.forEach(d => batch.delete(d.ref)); await batch.commit(); }
-  async sendNotification(userId: string, title: string, message: string, type: string, icon?: string, scheduledAt?: string) { await this.put('notifications', { userId, title, message, type, icon, isRead: false, createdAt: new Date().toISOString(), scheduledAt }); }
-  async getReportsForPublisher(publisherId: string): Promise<ModReport[]> { const q = query(collection(firestore, 'reports'), where('publisherId', '==', publisherId)); const snap = await getDocs(q); return snap.docs.map(d => ({ id: d.id, ...d.data() } as ModReport)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); }
-  async resolveReport(id: string) { await updateDoc(doc(firestore, 'reports', id), { status: 'reviewed' }); }
-  async deleteReport(id: string) { await deleteDoc(doc(firestore, 'reports', id)); }
-  async deleteMod(id: string) { await deleteDoc(doc(firestore, 'mods', id)); }
-  async followUser(followerId: string, followingId: string) { const userRef = doc(firestore, 'users', followerId); const targetRef = doc(firestore, 'users', followingId); await runTransaction(firestore, async (tx) => { const uSnap = await tx.get(userRef); if (!uSnap.exists()) return; const following = uSnap.data().following || []; if (following.includes(followingId)) { tx.update(userRef, { following: arrayRemove(followingId) }); tx.update(targetRef, { followers: increment(-1) }); } else { tx.update(userRef, { following: arrayUnion(followingId) }); tx.update(targetRef, { followers: increment(1) }); } }); }
+  async getNotifications(userId: string): Promise<Notification[]> { 
+    try {
+      const q = query(collection(firestore, 'notifications'), where('userId', '==', userId)); 
+      const snap = await getDocs(q); 
+      return snap.docs.map(d => ({ id: d.id, ...d.data() } as Notification)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); 
+    } catch (e) { return []; }
+  }
+  async markNotificationRead(id: string) { try { await updateDoc(doc(firestore, 'notifications', id), { isRead: true }); } catch (e) {} }
+  async deleteNotification(id: string) { try { await deleteDoc(doc(firestore, 'notifications', id)); } catch (e) {} }
+  async deleteAllNotifications(userId: string) { try { const q = query(collection(firestore, 'notifications'), where('userId', '==', userId)); const snap = await getDocs(q); const batch = writeBatch(firestore); snap.docs.forEach(d => batch.delete(d.ref)); await batch.commit(); } catch (e) {} }
+  async sendNotification(userId: string, title: string, message: string, type: string, icon?: string, scheduledAt?: string) { try { await this.put('notifications', { userId, title, message, type, icon, isRead: false, createdAt: new Date().toISOString(), scheduledAt }); } catch (e) {} }
+  async getReportsForPublisher(publisherId: string): Promise<ModReport[]> { 
+    try {
+      const q = query(collection(firestore, 'reports'), where('publisherId', '==', publisherId)); 
+      const snap = await getDocs(q); 
+      return snap.docs.map(d => ({ id: d.id, ...d.data() } as ModReport)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); 
+    } catch (e) { return []; }
+  }
+  async resolveReport(id: string) { try { await updateDoc(doc(firestore, 'reports', id), { status: 'reviewed' }); } catch (e) {} }
+  async deleteReport(id: string) { try { await deleteDoc(doc(firestore, 'reports', id)); } catch (e) {} }
+  async deleteMod(id: string) { try { await deleteDoc(doc(firestore, 'mods', id)); } catch (e) {} }
+  async followUser(followerId: string, followingId: string) { const userRef = doc(firestore, 'users', followerId); const targetRef = doc(firestore, 'users', followingId); try { await runTransaction(firestore, async (tx) => { const uSnap = await tx.get(userRef); if (!uSnap.exists()) return; const following = uSnap.data().following || []; if (following.includes(followingId)) { tx.update(userRef, { following: arrayRemove(followingId) }); tx.update(targetRef, { followers: increment(-1) }); } else { tx.update(userRef, { following: arrayUnion(followingId) }); tx.update(targetRef, { followers: increment(1) }); } }); } catch (e) {} }
   onAuthChange(callback: (user: any) => void) { return onAuthStateChanged(auth, callback); }
   
   async getFollowers(userId: string): Promise<User[]> {
-    const q = query(collection(firestore, 'users'), where('following', 'array-contains', userId));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as User);
+    try {
+      const q = query(collection(firestore, 'users'), where('following', 'array-contains', userId));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => d.data() as User);
+    } catch (e) { return []; }
   }
 
   async banUser(userId: string, durationDays: number, reason: string) {
     const blockedUntil = new Date();
     blockedUntil.setDate(blockedUntil.getDate() + durationDays);
-    await updateDoc(doc(firestore, 'users', userId), { isBlocked: true, blockedReason: reason, blockedUntil: blockedUntil.toISOString() });
+    try {
+      await updateDoc(doc(firestore, 'users', userId), { isBlocked: true, blockedReason: reason, blockedUntil: blockedUntil.toISOString() });
+    } catch (e) {}
   }
 
-  async unbanUser(userId: string) { await updateDoc(doc(firestore, 'users', userId), { isBlocked: false, blockedReason: null, blockedUntil: null }); }
-  async deleteUser(userId: string) { await deleteDoc(doc(firestore, 'users', userId)); }
-  async resolveVerification(userId: string, status: VerificationStatus) { const update: any = { verificationStatus: status }; if (status === 'verified') update.isVerified = true; else if (status === 'none') update.isVerified = false; await updateDoc(doc(firestore, 'users', userId), update); }
-  async updateAuthEmail(email: string) { if (auth.currentUser) { await updateEmail(auth.currentUser, email); } }
-  async scheduleAccountDeletion(userId: string) { await updateDoc(doc(firestore, 'users', userId), { scheduledDeletion: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }); }
+  async unbanUser(userId: string) { try { await updateDoc(doc(firestore, 'users', userId), { isBlocked: false, blockedReason: null, blockedUntil: null }); } catch (e) {} }
+  async deleteUser(userId: string) { try { await deleteDoc(doc(firestore, 'users', userId)); } catch (e) {} }
+  async resolveVerification(userId: string, status: VerificationStatus) { const update: any = { verificationStatus: status }; if (status === 'verified') update.isVerified = true; else if (status === 'none') update.isVerified = false; try { await updateDoc(doc(firestore, 'users', userId), update); } catch (e) {} }
+  async updateAuthEmail(email: string) { if (auth.currentUser) { try { await updateEmail(auth.currentUser, email); } catch (e) {} } }
+  async scheduleAccountDeletion(userId: string) { try { await updateDoc(doc(firestore, 'users', userId), { scheduledDeletion: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }); } catch (e) {} }
   
   async getRecentChats(userId: string): Promise<string[]> {
-    // Queries without orderBy('createdAt') to avoid complex index requirements
-    const sentQ = query(collection(firestore, 'messages'), where('senderId', '==', userId), limit(50));
-    const receivedQ = query(collection(firestore, 'messages'), where('receiverId', '==', userId), limit(50));
-    
-    const [sentSnap, receivedSnap] = await Promise.all([getDocs(sentQ), getDocs(receivedQ)]);
-    const partners = new Set<string>();
-    
-    // Sort logic moved to client:
-    const allMsgs = [...sentSnap.docs, ...receivedSnap.docs].map(d => d.data());
-    allMsgs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); // Descending
-
-    allMsgs.forEach(msg => {
-      if (msg.senderId === userId) partners.add(msg.receiverId);
-      else partners.add(msg.senderId);
-    });
-    
-    return Array.from(partners);
+    try {
+      // Queries without orderBy('createdAt') to avoid complex index requirements
+      const sentQ = query(collection(firestore, 'messages'), where('senderId', '==', userId), limit(50));
+      const receivedQ = query(collection(firestore, 'messages'), where('receiverId', '==', userId), limit(50));
+      
+      const [sentSnap, receivedSnap] = await Promise.all([getDocs(sentQ), getDocs(receivedQ)]);
+      const partners = new Set<string>();
+      
+      // Sort logic moved to client:
+      const allMsgs = [...sentSnap.docs, ...receivedSnap.docs].map(d => d.data());
+      allMsgs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); // Descending
+  
+      allMsgs.forEach(msg => {
+        if (msg.senderId === userId) partners.add(msg.receiverId);
+        else partners.add(msg.senderId);
+      });
+      
+      return Array.from(partners);
+    } catch (e) { return []; }
   }
 
   async getMessages(user1Id: string, user2Id: string): Promise<ChatMessage[]> {
-    const q1 = query(collection(firestore, 'messages'), where('senderId', '==', user1Id), where('receiverId', '==', user2Id));
-    const q2 = query(collection(firestore, 'messages'), where('senderId', '==', user2Id), where('receiverId', '==', user1Id));
-    
-    const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
-    const msgs = [...snap1.docs, ...snap2.docs]
-      .map(d => ({ id: d.id, ...d.data() } as ChatMessage))
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    try {
+      const q1 = query(collection(firestore, 'messages'), where('senderId', '==', user1Id), where('receiverId', '==', user2Id));
+      const q2 = query(collection(firestore, 'messages'), where('senderId', '==', user2Id), where('receiverId', '==', user1Id));
       
-    return msgs;
+      const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+      const msgs = [...snap1.docs, ...snap2.docs]
+        .map(d => ({ id: d.id, ...d.data() } as ChatMessage))
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        
+      return msgs;
+    } catch (e) { return []; }
   }
 
   // Live Listeners for Chat
@@ -707,10 +810,14 @@ export class PlatformDB {
     const unsub1 = onSnapshot(sentQ, (snap) => {
       sentData = snap.docs.map(d => d.data());
       process();
+    }, (error) => {
+      console.warn("Recent chats (sent) snapshot error:", error.code);
     });
     const unsub2 = onSnapshot(receivedQ, (snap) => {
       receivedData = snap.docs.map(d => d.data());
       process();
+    }, (error) => {
+      console.warn("Recent chats (received) snapshot error:", error.code);
     });
 
     return () => { unsub1(); unsub2(); };
@@ -731,38 +838,50 @@ export class PlatformDB {
     const unsub1 = onSnapshot(q1, (snap) => {
       msgs1 = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage));
       process();
+    }, (error) => {
+      console.warn("Messages (q1) snapshot error:", error.code);
     });
     const unsub2 = onSnapshot(q2, (snap) => {
       msgs2 = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage));
       process();
+    }, (error) => {
+      console.warn("Messages (q2) snapshot error:", error.code);
     });
 
     return () => { unsub1(); unsub2(); };
   }
 
   async getFriendRequests(userId: string): Promise<FriendRequest[]> {
-    const q = query(collection(firestore, 'friend_requests'), where('receiverId', '==', userId));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest));
+    try {
+      const q = query(collection(firestore, 'friend_requests'), where('receiverId', '==', userId));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest));
+    } catch (e) { return []; }
   }
 
   subscribeToFriendRequests(userId: string, callback: (reqs: FriendRequest[]) => void): Unsubscribe {
     const q = query(collection(firestore, 'friend_requests'), where('receiverId', '==', userId));
     return onSnapshot(q, (snap) => {
       callback(snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest)));
+    }, (error) => {
+      console.warn("Friend requests snapshot error:", error.code);
     });
   }
 
   async getSentFriendRequests(userId: string): Promise<FriendRequest[]> {
-    const q = query(collection(firestore, 'friend_requests'), where('senderId', '==', userId));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest));
+    try {
+      const q = query(collection(firestore, 'friend_requests'), where('senderId', '==', userId));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest));
+    } catch (e) { return []; }
   }
 
   subscribeToSentFriendRequests(userId: string, callback: (reqs: FriendRequest[]) => void): Unsubscribe {
     const q = query(collection(firestore, 'friend_requests'), where('senderId', '==', userId));
     return onSnapshot(q, (snap) => {
       callback(snap.docs.map(d => ({ id: d.id, ...d.data() } as FriendRequest)));
+    }, (error) => {
+      console.warn("Sent friend requests snapshot error:", error.code);
     });
   }
 

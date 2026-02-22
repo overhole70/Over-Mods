@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Newspaper, Calendar, User as UserIcon, ArrowRight, Loader2, Sparkles, Image as ImageIcon, LayoutGrid, Plus, Clock, MessageSquare, Send, Heart, Trash2, ShieldCheck, X, Search, Users, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Newspaper, Calendar, User as UserIcon, ArrowRight, Loader2, Sparkles, Image as ImageIcon, LayoutGrid, Plus, Clock, MessageSquare, Send, Heart, Trash2, ShieldCheck, X, Search, Users, AlertTriangle, TrendingUp, ArrowDownNarrowWide } from 'lucide-react';
 import { NewsItem, User, CommunityPost, PostComment } from '../types';
-import { db } from '../db';
+import { db, firestore } from '../db';
+import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import { useTranslation } from '../LanguageContext';
 
 interface NewsViewProps {
@@ -23,6 +24,10 @@ const NewsView: React.FC<NewsViewProps> = ({ onBack, currentUser, onViewProfile 
   
   // Community Posts State
   const [posts, setPosts] = useState<CommunityPost[]>([]);
+  const [lastPostDoc, setLastPostDoc] = useState<any>(null);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
+  const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
+
   const [isCreatingPost, setIsCreatingPost] = useState(false);
   const [postTitle, setPostTitle] = useState('');
   const [postDesc, setPostDesc] = useState('');
@@ -54,17 +59,40 @@ const NewsView: React.FC<NewsViewProps> = ({ onBack, currentUser, onViewProfile 
   }, [activeTab]);
 
   const loadData = async () => {
+    if (activeTab === 'community') {
+       setIsLoading(true);
+       try {
+         const res = await db.getCommunityPosts(10);
+         setPosts(res.posts);
+         setLastPostDoc(res.lastDoc);
+         setHasMorePosts(!!res.lastDoc);
+       } finally {
+         setIsLoading(false);
+       }
+       return; 
+    }
+    
     setIsLoading(true);
     try {
       if (activeTab === 'news') {
         const data = await db.getAll('news');
         setNews((data as NewsItem[]) || []);
-      } else if (activeTab === 'community') {
-        const data = await db.getCommunityPosts();
-        setPosts(data || []);
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMorePosts = async () => {
+    if (isLoadingMorePosts || !hasMorePosts || !lastPostDoc) return;
+    setIsLoadingMorePosts(true);
+    try {
+      const res = await db.getCommunityPosts(10, lastPostDoc);
+      setPosts(prev => [...prev, ...res.posts]);
+      setLastPostDoc(res.lastDoc);
+      setHasMorePosts(!!res.lastDoc);
+    } finally {
+      setIsLoadingMorePosts(false);
     }
   };
 
@@ -485,6 +513,19 @@ const NewsView: React.FC<NewsViewProps> = ({ onBack, currentUser, onViewProfile 
                    <p>لا توجد منشورات مطابقة</p>
                 </div>
               )}
+
+               {hasMorePosts && !searchTerm && (
+                 <div className="flex justify-center pt-6">
+                    <button 
+                      onClick={loadMorePosts} 
+                      disabled={isLoadingMorePosts}
+                      className="px-8 py-3 bg-zinc-900 border border-white/5 rounded-2xl text-zinc-500 font-black text-xs hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                       {isLoadingMorePosts ? <Loader2 className="animate-spin" size={16}/> : <ArrowDownNarrowWide size={16} />}
+                       {isLoadingMorePosts ? 'جاري التحميل...' : 'تحميل المزيد'}
+                    </button>
+                 </div>
+               )}
            </div>
         </div>
       )}

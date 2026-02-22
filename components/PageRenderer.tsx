@@ -46,6 +46,9 @@ interface PageRendererProps {
   editingItem: Mod | MinecraftServer | null;
   setEditingItem: (item: Mod | MinecraftServer | null) => void;
   db: any;
+  onLoadMoreMods?: () => void;
+  hasMoreMods?: boolean;
+  isLoadingMoreMods?: boolean;
 }
 
 const PageRenderer: React.FC<PageRendererProps> = ({
@@ -53,7 +56,8 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   currentUser, mods, servers, newsSnippet, userDownloads,
   searchTerm, setSearchTerm, isRefreshing, initializeData, trackUserInterest,
   isRTL, isAdminAuthenticated, setIsAdminAuthenticated, setShowAdminModal, setCurrentUser,
-  editingItem, setEditingItem, db
+  editingItem, setEditingItem, db,
+  onLoadMoreMods, hasMoreMods, isLoadingMoreMods
 }) => {
   // Removed hooks
   
@@ -310,7 +314,10 @@ const PageRenderer: React.FC<PageRendererProps> = ({
        setShowAdminModal(true); // Trigger modal in App
        return <div className="h-screen flex items-center justify-center text-zinc-500">منطقة محمية...</div>;
     }
-    return <AdminDashboard currentUser={currentUser} onInspectAccount={(u) => onNavigate(`@${u.username}`)} />;
+    return <AdminDashboard 
+      currentUser={currentUser} 
+      onInspectAccount={(u) => onNavigate(`@${u.username}`)} 
+    />;
   }
 
   if (normalizedPageId === 'questions') {

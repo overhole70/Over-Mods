@@ -64,6 +64,8 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ currentUser, onBack, acti
             setChallengeStep('lobby');
           }
         }
+      }, (error) => {
+        console.warn("Challenge snapshot error:", error.code);
       });
       return () => unsub();
     }
@@ -175,6 +177,8 @@ const QuestionsView: React.FC<QuestionsViewProps> = ({ currentUser, onBack, acti
       // Let's reuse the effect logic by setting local listener
       const unsub = onSnapshot(doc(firestore, 'question_challenges', id), (doc) => {
          if (doc.exists()) setChallengeData(doc.data() as QuestionChallenge);
+      }, (error) => {
+         console.warn("Create challenge snapshot error:", error.code);
       });
       setChallengeStep('lobby');
     } catch (e) { alert('Failed to create challenge'); }

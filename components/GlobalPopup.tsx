@@ -24,6 +24,8 @@ const GlobalPopup: React.FC<GlobalPopupProps> = ({ onNavigate }) => {
           setConfig(null);
         }
       }
+    }, (error) => {
+      console.warn("Global popup snapshot error:", error.code);
     });
     return () => unsub();
   }, []);

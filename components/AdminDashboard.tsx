@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Complaint, ModReport, AdminPermissions, Notification, NewsItem, StaffMessage, ChatMessage, PopupWindowConfig, PopupButton, PopupSize } from '../types';
-import { db } from '../db';
+import { db, firestore } from '../db';
+import { collection, query, onSnapshot } from 'firebase/firestore';
 import { 
   Users, Flag, Bell, ShieldAlert, Ban, Unlock, 
   CheckCircle, XCircle, Search, UserPlus, Trash2, Send, Loader2, Camera, CheckCircle2, ShieldCheck, Youtube, ExternalLink, Settings, AlertTriangle, Save, Plus, Info, Calendar, Mail, UserCircle, Hash, Layout, User as UserIcon, MessageSquare, ChevronDown, Monitor, Sparkles, FileCheck, Shield, HeartHandshake, Newspaper, Edit3, UserMinus, Image as ImageIcon, X, Copy, Check, Eye, Ghost, History, Inbox, Clock, Trophy, RefreshCw, LayoutPanelLeft
@@ -59,6 +60,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
   });
 
   const [users, setUsers] = useState<User[]>([]);
+  const [lastUserDoc, setLastUserDoc] = useState<any>(null);
+  const [hasMoreUsers, setHasMoreUsers] = useState(true);
+  const [isLoadingMoreUsers, setIsLoadingMoreUsers] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+
   const [reports, setReports] = useState<ModReport[]>([]);
   const [requests, setRequests] = useState<User[]>([]);
   const [complaints, setComplaints] = useState<Complaint[]>([]);
@@ -156,18 +162,87 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
     }
   }, [monitorUser, monitorSelectedPartner]);
 
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchTerm.trim()) {
+        handleSearch(searchTerm);
+      } else if (searchTerm === '' && isSearching) {
+        // Reset to default list if search cleared
+        loadData();
+        setIsSearching(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const handleSearch = async (term: string) => {
+    setIsSearching(true);
+    setHasMoreUsers(false); // Disable load more during search
+    try {
+      const results = await db.searchUsers(term);
+      setUsers(results);
+    } catch (e) {
+      console.error("Search failed", e);
+    }
+  };
+
   const loadData = async () => {
+    if (!currentUser) {
+       setIsLoading(false);
+       return;
+    }
+    // Basic client-side check before attempting to load
+    const isOwner = currentUser.email === OWNER_EMAIL;
+    const isAdmin = currentUser.role === 'Admin' || isOwner;
+    
+    if (!isAdmin) {
+       setIsLoading(false);
+       return;
+    }
+
     setIsLoading(true);
     try {
-      const [u, r, req, comp, n, site, popup] = await Promise.all([
-        db.getAllUsers(), db.getAll('reports'), db.getPendingVerifications(),
-        db.getAll('complaints'), db.getAll('news'), db.getSiteSettings(),
-        db.get('settings', 'popup_window')
+      const [uData, r, req, comp, n, site, popup] = await Promise.all([
+        db.getAllUsers(100).catch(e => { console.warn("Users load failed", e); return { users: [], lastDoc: null }; }),
+        db.getAll('reports').catch(e => { console.warn("Reports load failed", e); return []; }),
+        db.getPendingVerifications().catch(e => { console.warn("Verifications load failed", e); return []; }),
+        db.getAll('complaints').catch(e => { console.warn("Complaints load failed", e); return []; }),
+        db.getAll('news').catch(e => { console.warn("News load failed", e); return []; }), 
+        db.getSiteSettings().catch(e => { console.warn("Site settings load failed", e); return { appIcon: '', heroImage: '', sideImage: '' }; }),
+        db.get('settings', 'popup_window').catch(e => { console.warn("Popup load failed", e); return null; })
       ]);
-      setUsers(u || []); setReports(r as ModReport[] || []); setRequests(req || []);
-      setComplaints(comp as Complaint[] || []); setNews(n as NewsItem[] || []); setSiteSettings(site);
+      
+      if (uData && uData.users) {
+         setUsers(uData.users);
+         setLastUserDoc(uData.lastDoc);
+         setHasMoreUsers(!!uData.lastDoc);
+         setIsSearching(false);
+      }
+      if (r) setReports(r as ModReport[]);
+      setRequests(req || []);
+      if (comp) setComplaints(comp as Complaint[]);
+      setNews(n as NewsItem[] || []);
+      setSiteSettings(site);
       if (popup) setPopupConfig(popup as PopupWindowConfig);
+    } catch (e) {
+      console.error("Admin load failed", e);
     } finally { setIsLoading(false); }
+  };
+
+  const loadMoreUsers = async () => {
+    if (isLoadingMoreUsers || !hasMoreUsers || !lastUserDoc || isSearching) return;
+    setIsLoadingMoreUsers(true);
+    try {
+      const nextBatch = await db.getAllUsers(100, lastUserDoc);
+      setUsers(prev => [...prev, ...nextBatch.users]);
+      setLastUserDoc(nextBatch.lastDoc);
+      setHasMoreUsers(!!nextBatch.lastDoc);
+    } catch (e) {
+      console.error("Load more users failed", e);
+    } finally {
+      setIsLoadingMoreUsers(false);
+    }
   };
 
   const loadStaffMessages = async () => { 
@@ -262,8 +337,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
     }
   };
 
-  const filteredUsers = users.filter(u => (u.displayName || '').toLowerCase().includes(searchTerm.toLowerCase()) || (u.username || '').toLowerCase().includes(searchTerm.toLowerCase())).filter(u => isOwner || u.email !== OWNER_EMAIL);
-
   const SectionHeader = ({ title, count, color }: any) => (
     <div className="flex items-center justify-between px-2 mb-8">
        <h3 className="text-2xl md:text-3xl font-black text-white">{title}</h3>
@@ -312,13 +385,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
          {/* Members Section */}
          {activeTab === 'users' && isTabPermitted('users') && (
            <div className="space-y-6">
-              <SectionHeader title="قائمة الأعضاء" count={filteredUsers.length} />
+              <SectionHeader title="قائمة الأعضاء" count={users.length} />
               <div className="relative group">
                  <Search className="absolute right-6 top-1/2 -translate-y-1/2 text-zinc-600" size={24} />
                  <input type="text" placeholder="بحث باسم العضو..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-[2.5rem] py-6 pr-16 pl-8 text-white font-bold outline-none focus:border-lime-500/50 transition-all" />
               </div>
               <div className="grid grid-cols-1 gap-3">
-                 {filteredUsers.map(u => (
+                 {users.map(u => (
                    <div key={u.id} className="bg-zinc-900/30 p-4 md:p-6 rounded-[2.5rem] border border-white/5 flex flex-wrap md:flex-nowrap items-center justify-between gap-4 md:gap-6 hover:bg-zinc-900/50 transition-all shadow-lg group">
                       <div className="flex items-center gap-4 md:gap-5 flex-1 min-w-0">
                          <div className="relative cursor-pointer hover:scale-105 transition-transform" onClick={() => setUserDetailModal(u)}>

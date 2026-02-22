@@ -173,6 +173,9 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
           !(u.blockedUsers || []).includes(currentUser.id)
         );
         setSearchResults(filtered);
+      } catch (e) {
+        console.error("Search failed", e);
+        setSearchResults([]);
       } finally {
         setIsSearching(false);
       }
