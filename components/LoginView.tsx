@@ -8,7 +8,7 @@ interface LoginViewProps {
 }
 
 const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('register');
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
   const [registerStep, setRegisterStep] = useState<'select' | 'form'>('select');
   const [regMethod, setRegMethod] = useState<'email' | 'username'>('email');
   

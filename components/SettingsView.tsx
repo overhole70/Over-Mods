@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User as UserIcon, LogOut, Loader2, ChevronRight, ArrowRight, Lock, Eye, Copy, CheckCircle2, ShieldCheck, Globe, Users, Calendar, Lock as LockIcon, Clock, AlertTriangle, MessageSquare, HeartHandshake, Send, ChevronLeft, Mail, ShieldAlert, Check, Shield, Hash, Bell, RefreshCw, Key, UserCheck, Smartphone, Palette, Plus, X, Trash2, Edit3, UserPlus } from 'lucide-react';
+import { User as UserIcon, LogOut, Loader2, ChevronRight, ArrowRight, Lock, Eye, Copy, CheckCircle2, ShieldCheck, Globe, Users, Calendar, Lock as LockIcon, Clock, AlertTriangle, MessageSquare, HeartHandshake, Send, ChevronLeft, Mail, ShieldAlert, Check, Shield, Hash, Bell, RefreshCw, Key, UserCheck, Smartphone, Palette, Plus, X, Trash2, Edit3, UserPlus, Facebook, Youtube } from 'lucide-react';
 import { db, auth } from '../db';
 import { User, PrivacySettings } from '../types';
 import { useTranslation } from '../LanguageContext';
@@ -251,10 +251,35 @@ const SettingsView: React.FC = () => {
               <ListRow label="الخصوصية" icon={Eye} colorClass="text-purple-500" onClick={() => setActiveSection('privacy')} />
               <ListRow label="الدعم الفني" icon={HeartHandshake} colorClass="text-pink-500" onClick={() => setActiveSection('support')} />
            </div>
-           <div className="px-6 pt-10">
+           <div className="px-6 pt-10 space-y-4">
               <button onClick={() => db.logout().then(()=>window.location.reload())} className="w-full py-5 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white rounded-2xl font-black text-sm transition-all flex items-center justify-center gap-3">
                  <LogOut size={18} /> تسجيل الخروج
               </button>
+
+              <div className="pt-6 border-t border-white/5">
+                 <h4 className="text-zinc-500 font-black text-xs text-center mb-4">الحسابات الرسمية</h4>
+                 <div className="grid grid-cols-2 gap-3">
+                    <a 
+                      href="https://www.facebook.com/share/1BS71MkCK3/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="p-4 bg-[#1877F2] text-white rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 hover:shadow-lg hover:shadow-blue-900/20 group"
+                    >
+                       <Facebook size={20} className="group-hover:scale-110 transition-transform" />
+                       <span className="font-black text-xs">Facebook</span>
+                    </a>
+                    
+                    <a 
+                      href="https://youtube.com/@Over-Mods" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="p-4 bg-[#FF0000] text-white rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 hover:shadow-lg hover:shadow-red-900/20 group"
+                    >
+                       <Youtube size={20} className="group-hover:scale-110 transition-transform" />
+                       <span className="font-black text-xs">YouTube</span>
+                    </a>
+                 </div>
+              </div>
            </div>
         </div>
       ) : (
