@@ -25,7 +25,7 @@ import AdminDashboard from './AdminDashboard';
 import StatsDashboard from './StatsDashboard';
 import QuestionsView from './QuestionsView';
 import CompleteProfileView from './CompleteProfileView';
-import DownloadSection from './DownloadSection';
+import DownloadPage from './DownloadPage';
 
 interface PageRendererProps {
   activePage: string;
@@ -73,7 +73,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
     const staticPages = [
       'home', 'settings', 'profile', 'servers', 'news', 'upload',
       'join-creators', 'notifications', 'downloads', 'friends',
-      'earnings', 'contests', 'edit-profile', 'admin', 'stats', 'login', 'questions', 'complete-profile'
+      'earnings', 'contests', 'edit-profile', 'admin', 'stats', 'login', 'questions', 'complete-profile', 'download'
     ];
     return staticPages.includes(id.toLowerCase());
   };
@@ -332,7 +332,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'download') {
-    return <DownloadSection />;
+    return <DownloadPage />;
   }
 
   // --- DYNAMIC RENDER ---
