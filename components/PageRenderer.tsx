@@ -117,7 +117,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   };
 
   const fetchModByShareCodeOrId = async (code: string) => {
-    // 1. Check loaded mods first (cache) - check both shareCode and ID and modCode
+    // 1. Check loaded mods first (cache)
     const foundLocal = mods.find(m => m.shareCode === code || m.id === code || m.modCode === code);
     if (foundLocal) {
       setFetchedMod(foundLocal);
