@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { firestore } from '../db';
 import { ArrowRight, Download, ShieldCheck, Loader2, CheckCircle, Edit, MessageSquare, Send, User as UserIcon, Flag, Star, Clock, X, Info, Sparkles, LayoutGrid, Copy, Share2, Trash2, Youtube, ThumbsUp, ThumbsDown, Calendar, FileText, Database, Layers, AlertTriangle, Play, Eye, Zap, Tag, Monitor, HardDrive, UserPlus, UserMinus, Hash, ImageIcon, Lock, CheckCircle2, TrendingUp, Ghost } from 'lucide-react';
 import { Mod, User, Comment } from '../types';
@@ -105,14 +105,15 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentU
         else if (location.pathname.startsWith('/map/')) expectedType = 'Map';
         else if (location.pathname.startsWith('/modpack/')) expectedType = 'Modpack';
 
-        // Query by shareCode
-        const q = query(collection(firestore, 'mods'), where('shareCode', '==', code));
+        // Query by shareCode (NOT by id)
+        const q = query(collection(firestore, 'mods'), where('shareCode', '==', code), limit(1));
         const snap = await getDocs(q);
 
         if (!snap.empty) {
           const data = snap.docs[0].data() as Mod;
           const foundMod = { id: snap.docs[0].id, ...data };
           
+          // Verify type matches route
           if (expectedType && foundMod.type !== expectedType) {
              console.warn(`Type mismatch: Expected ${expectedType}, got ${foundMod.type}`);
              setNotFound(true);

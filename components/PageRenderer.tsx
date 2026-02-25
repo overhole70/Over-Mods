@@ -194,14 +194,17 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   const navigateToMod = (m: Mod) => {
-    const code = m.shareCode || m.id;
-    let path = code;
-    if (m.type === 'Mod') path = `mod/${code}`;
-    else if (m.type === 'Resource Pack') path = `rp/${code}`;
-    else if (m.type === 'Map') path = `map/${code}`;
-    else if (m.type === 'Modpack') path = `modpack/${code}`;
+    if (m.shareCode) {
+        let prefix = 'mod';
+        if (m.type === 'Resource Pack') prefix = 'rp';
+        else if (m.type === 'Map') prefix = 'map';
+        else if (m.type === 'Modpack') prefix = 'modpack';
+        onNavigate(`${prefix}/${m.shareCode}`);
+    } else {
+        // Fallback to ID route (legacy)
+        onNavigate(m.id);
+    }
     trackUserInterest(m.category);
-    onNavigate(path);
   };
 
   if (normalizedPageId === 'home') {
