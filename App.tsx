@@ -83,6 +83,13 @@ export default function App() {
     window.scrollTo(0, 0);
   }, [currentView]);
 
+  // Handle initial URL path for direct access to /download
+  useEffect(() => {
+    if (window.location.pathname === '/download') {
+      setCurrentView('download');
+    }
+  }, []);
+
   useEffect(() => {
     let profileUnsubscribe: (() => void) | null = null;
     const authUnsubscribe = db.onAuthChange(async (firebaseUser) => {
