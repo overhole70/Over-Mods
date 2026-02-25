@@ -193,6 +193,17 @@ const PageRenderer: React.FC<PageRendererProps> = ({
     return <CompleteProfileView currentUser={currentUser} onComplete={(u) => { setCurrentUser(u); onNavigate('home'); }} />;
   }
 
+  const navigateToMod = (m: Mod) => {
+    const code = m.shareCode || m.id;
+    let path = code;
+    if (m.type === 'Mod') path = `mod/${code}`;
+    else if (m.type === 'Resource Pack') path = `rp/${code}`;
+    else if (m.type === 'Map') path = `map/${code}`;
+    else if (m.type === 'Modpack') path = `modpack/${code}`;
+    trackUserInterest(m.category);
+    onNavigate(path);
+  };
+
   if (normalizedPageId === 'home') {
     return <HomeView 
       mods={mods} 
@@ -201,7 +212,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       setSearchTerm={setSearchTerm} 
       isRefreshing={isRefreshing} 
       onRefresh={initializeData} 
-      onModClick={(m) => { trackUserInterest(m.category); onNavigate(m.shareCode || m.id); }} 
+      onModClick={navigateToMod} 
       onNavigate={(path) => onNavigate(path)} 
       isRTL={isRTL} 
       trackUserInterest={trackUserInterest}
@@ -219,7 +230,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       mods={mods.filter(m => m.publisherId === currentUser.id)} 
       onLogout={() => { db.logout(); setCurrentUser(null); onNavigate('login'); }} 
       onEditMod={(m) => { setEditingItem(m); onNavigate('upload'); }} 
-      onModClick={(m) => onNavigate(m.shareCode || m.id)} 
+      onModClick={navigateToMod} 
       onFollow={async () => {}} 
       onEditProfile={() => onNavigate('edit-profile')} 
       onBack={() => onNavigate('home')}
@@ -298,7 +309,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'downloads') {
-    return <DownloadsView mods={userDownloads} onModClick={(m) => onNavigate(m.shareCode || m.id)} />;
+    return <DownloadsView mods={userDownloads} onModClick={navigateToMod} />;
   }
 
   if (normalizedPageId === 'friends') {
@@ -361,7 +372,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       mods={mods.filter(m => m.publisherId === fetchedUser.id)} 
       onLogout={() => { db.logout(); setCurrentUser(null); onNavigate('login'); }} 
       onEditMod={(m) => {}} 
-      onModClick={(m) => onNavigate(m.shareCode || m.id)} 
+      onModClick={navigateToMod} 
       onFollow={async () => { await db.followUser(currentUser!.id, fetchedUser.id); }} 
       onEditProfile={() => onNavigate('edit-profile')} 
       onBack={() => onNavigate('home')} 
@@ -374,7 +385,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       allMods={mods} 
       currentUser={currentUser} 
       onBack={() => onNavigate('home')} 
-      onModClick={(m) => { trackUserInterest(m.category); onNavigate(m.shareCode || m.id); }} 
+      onModClick={navigateToMod} 
       isOnline={true} 
       isAdmin={isAdminAuthenticated || currentUser?.role === 'Admin'} 
       onPublisherClick={(pid) => db.get('users', pid).then((u: any) => { if(u) onNavigate(`@${u.username}`); })} 

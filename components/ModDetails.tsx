@@ -1,12 +1,15 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowRight, Download, ShieldCheck, Loader2, CheckCircle, Edit, MessageSquare, Send, User as UserIcon, Flag, Star, Clock, X, Info, Sparkles, LayoutGrid, Copy, Share2, Trash2, Youtube, ThumbsUp, ThumbsDown, Calendar, FileText, Database, Layers, AlertTriangle, Play, Eye, Zap, Tag, Monitor, HardDrive, UserPlus, UserMinus, Hash, ImageIcon, Lock, CheckCircle2, TrendingUp } from 'lucide-react';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { firestore } from '../db';
+import { ArrowRight, Download, ShieldCheck, Loader2, CheckCircle, Edit, MessageSquare, Send, User as UserIcon, Flag, Star, Clock, X, Info, Sparkles, LayoutGrid, Copy, Share2, Trash2, Youtube, ThumbsUp, ThumbsDown, Calendar, FileText, Database, Layers, AlertTriangle, Play, Eye, Zap, Tag, Monitor, HardDrive, UserPlus, UserMinus, Hash, ImageIcon, Lock, CheckCircle2, TrendingUp, Ghost } from 'lucide-react';
 import { Mod, User, Comment } from '../types';
 import { db } from '../db';
 import { useTranslation } from '../LanguageContext';
 
 interface ModDetailsProps {
-  mod: Mod;
+  mod?: Mod | null;
   allMods: Mod[];
   currentUser: User | null;
   onDownload: () => void;
@@ -23,43 +26,53 @@ interface ModDetailsProps {
 
 const OWNER_EMAIL = 'overmods1@gmail.com';
 
-const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDownload, onEdit, onDelete, onBack, onModClick, onPublisherClick, isFollowing: initialIsFollowing, onFollow, isOnline, isAdmin }) => {
+const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentUser, onDownload, onEdit, onDelete, onBack, onModClick, onPublisherClick, isFollowing: initialIsFollowing, onFollow, isOnline, isAdmin }) => {
   const { t, isRTL } = useTranslation();
+  const { code } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const [mod, setMod] = useState<Mod | null>(propMod || null);
+  const [isLoading, setIsLoading] = useState(!propMod);
+  const [notFound, setNotFound] = useState(false);
+
   const [commentText, setCommentText] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState('');
-  const [localComments, setLocalComments] = useState<Comment[]>(mod.comments || []);
+  
+  // Initialize with safe defaults
+  const [localComments, setLocalComments] = useState<Comment[]>(propMod?.comments || []);
   const [isFollowing, setIsFollowing] = useState(initialIsFollowing);
   const [isFollowProcessing, setIsFollowProcessing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [adminDeleteReason, setAdminDeleteReason] = useState('');
   const [copyCodeFeedback, setCopyCodeFeedback] = useState(false);
   const [selectedGalleryImage, setSelectedGalleryImage] = useState<string | null>(null);
-  const [publisherIsVerified, setPublisherIsVerified] = useState<boolean>(mod.isVerified || false);
+  const [publisherIsVerified, setPublisherIsVerified] = useState<boolean>(propMod?.isVerified || false);
   
-  const [userRating, setUserRating] = useState<number>(mod.ratedBy?.[currentUser?.id || ''] || 0);
+  const [userRating, setUserRating] = useState<number>(propMod?.ratedBy?.[currentUser?.id || ''] || 0);
   const [hoverRating, setHoverRating] = useState<number>(0);
   const [isRatingProcessing, setIsRatingProcessing] = useState(false);
 
   // Admin Fake Stats Logic
   const isOwner = currentUser?.email === OWNER_EMAIL;
   const [showFakeStatsModal, setShowFakeStatsModal] = useState(false);
-  const [fakeViews, setFakeViews] = useState(mod.fakeStats?.views || 0);
-  const [fakeDownloads, setFakeDownloads] = useState(mod.fakeStats?.downloads || 0);
-  const [fakeLikes, setFakeLikes] = useState(mod.fakeStats?.likes || 0);
+  const [fakeViews, setFakeViews] = useState(propMod?.fakeStats?.views || 0);
+  const [fakeDownloads, setFakeDownloads] = useState(propMod?.fakeStats?.downloads || 0);
+  const [fakeLikes, setFakeLikes] = useState(propMod?.fakeStats?.likes || 0);
 
-  // Stats Display
-  const displayViews = (mod.stats.uniqueViews || 0) + (mod.fakeStats?.views || 0);
-  const displayDownloads = (mod.stats.downloads || 0) + (mod.fakeStats?.downloads || 0);
-  const displayLikes = (mod.stats.likes || 0) + (mod.fakeStats?.likes || 0);
+  // Stats Display (Safe calculation)
+  const displayViews = mod ? (mod.stats.uniqueViews || 0) + (mod.fakeStats?.views || 0) : 0;
+  const displayDownloads = mod ? (mod.stats.downloads || 0) + (mod.fakeStats?.downloads || 0) : 0;
+  const displayLikes = mod ? (mod.stats.likes || 0) + (mod.fakeStats?.likes || 0) : 0;
 
   const [votes, setVotes] = useState({ 
     likes: displayLikes, 
-    dislikes: mod.stats.dislikes || 0,
-    hasLiked: mod.likedBy?.includes(currentUser?.id || ''),
-    hasDisliked: mod.dislikedBy?.includes(currentUser?.id || '')
+    dislikes: propMod?.stats.dislikes || 0,
+    hasLiked: propMod?.likedBy?.includes(currentUser?.id || '') || false,
+    hasDisliked: propMod?.dislikedBy?.includes(currentUser?.id || '') || false
   });
 
   // Purchase States
@@ -67,10 +80,77 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
 
+  // Fetch Logic
   useEffect(() => {
+    if (propMod) {
+      setMod(propMod);
+      setIsLoading(false);
+      return;
+    }
+
+    if (!code) {
+      setIsLoading(false);
+      // If no code and no propMod, it's an error unless handled elsewhere
+      return;
+    }
+
+    const fetchMod = async () => {
+      setIsLoading(true);
+      setNotFound(false);
+      try {
+        // Determine expected type from path
+        let expectedType = '';
+        if (location.pathname.startsWith('/mod/')) expectedType = 'Mod';
+        else if (location.pathname.startsWith('/rp/')) expectedType = 'Resource Pack';
+        else if (location.pathname.startsWith('/map/')) expectedType = 'Map';
+        else if (location.pathname.startsWith('/modpack/')) expectedType = 'Modpack';
+
+        // Query by shareCode
+        const q = query(collection(firestore, 'mods'), where('shareCode', '==', code));
+        const snap = await getDocs(q);
+
+        if (!snap.empty) {
+          const data = snap.docs[0].data() as Mod;
+          const foundMod = { id: snap.docs[0].id, ...data };
+          
+          if (expectedType && foundMod.type !== expectedType) {
+             console.warn(`Type mismatch: Expected ${expectedType}, got ${foundMod.type}`);
+             setNotFound(true);
+          } else {
+             setMod(foundMod);
+          }
+        } else {
+          setNotFound(true);
+        }
+      } catch (e) {
+        console.error("Fetch error:", e);
+        setNotFound(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchMod();
+  }, [code, propMod, location.pathname]);
+
+  useEffect(() => {
+    if (!mod) return;
+
     setLocalComments(mod.comments || []);
     setIsFollowing(initialIsFollowing);
     setUserRating(mod.ratedBy?.[currentUser?.id || ''] || 0);
+    setFakeViews(mod.fakeStats?.views || 0);
+    setFakeDownloads(mod.fakeStats?.downloads || 0);
+    setFakeLikes(mod.fakeStats?.likes || 0);
+    
+    const dLikes = (mod.stats.likes || 0) + (mod.fakeStats?.likes || 0);
+    setVotes({
+      likes: dLikes,
+      dislikes: mod.stats.dislikes || 0,
+      hasLiked: mod.likedBy?.includes(currentUser?.id || '') || false,
+      hasDisliked: mod.dislikedBy?.includes(currentUser?.id || '') || false
+    });
+
     window.scrollTo(0, 0);
 
     // Fix: Fetch publisher's current verification status to handle bug where old mods show as unverified
@@ -99,10 +179,30 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
       }, 4000);
     }
     return () => { if (viewTimer) clearTimeout(viewTimer); };
-  }, [mod.id, isOnline, currentUser?.id, mod.publisherId, initialIsFollowing]);
+  }, [mod?.id, isOnline, currentUser?.id, mod?.publisherId, initialIsFollowing]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-40 min-h-[50vh]">
+        <Loader2 className="animate-spin text-lime-500 mb-4" size={48} />
+        <p className="text-zinc-500 font-black">جاري تحميل المحتوى...</p>
+      </div>
+    );
+  }
+
+  if (notFound || !mod) {
+    return (
+      <div className="flex flex-col items-center justify-center py-40 text-center min-h-[50vh]">
+        <Ghost size={64} className="text-zinc-800 mb-6" />
+        <h2 className="text-2xl font-black text-white">المحتوى غير موجود</h2>
+        <p className="text-zinc-500 mt-2">تأكد من الرابط أو حاول البحث عنه.</p>
+        <button onClick={() => navigate('/home')} className="mt-8 px-8 py-3 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all">العودة للرئيسية</button>
+      </div>
+    );
+  }
 
   const handleVote = async (type: 'like' | 'dislike') => {
-    if (!currentUser) return alert('يجب تسجيل الدخول للتفاعل');
+    if (!currentUser || !mod) return alert('يجب تسجيل الدخول للتفاعل');
     if (type === 'like') {
       const isRemoving = votes.hasLiked;
       setVotes(prev => ({
@@ -127,7 +227,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
   };
 
   const handleRate = async (rating: number) => {
-    if (!currentUser) return alert('يجب تسجيل الدخول للتقييم');
+    if (!currentUser || !mod) return alert('يجب تسجيل الدخول للتقييم');
     if (isRatingProcessing) return;
     setIsRatingProcessing(true);
     try {
@@ -141,7 +241,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
   };
 
   const handleFollowClick = async () => {
-    if (!currentUser || isFollowProcessing) return;
+    if (!currentUser || !mod || isFollowProcessing) return;
     setIsFollowProcessing(true);
     try {
       await onFollow();
@@ -153,7 +253,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !commentText.trim() || isSubmittingComment) return;
+    if (!currentUser || !mod || !commentText.trim() || isSubmittingComment) return;
     setIsSubmittingComment(true);
     const newComment: Comment = {
       id: 'c_' + Date.now() + Math.random().toString(36).substr(2, 5),
@@ -174,7 +274,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
 
   const handleSubmitReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !reportReason.trim()) return;
+    if (!currentUser || !mod || !reportReason.trim()) return;
     setIsReporting(true);
     try {
       await db.put('reports', {
@@ -198,7 +298,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
   };
 
   const copyShareCode = () => {
-    if (mod.shareCode) {
+    if (mod?.shareCode) {
       navigator.clipboard.writeText(mod.shareCode);
       setCopyCodeFeedback(true);
       setTimeout(() => setCopyCodeFeedback(false), 2000);
@@ -206,6 +306,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
   };
 
   const handleDownloadClick = async () => {
+    if (!mod) return;
     if (!isPurchased && mod.price && mod.price > 0) {
       if (!currentUser) return alert('يجب تسجيل الدخول للشراء');
       setShowPurchaseModal(true);
@@ -228,7 +329,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
   };
 
   const handleConfirmPurchase = async () => {
-    if (!currentUser) return;
+    if (!currentUser || !mod) return;
     setIsPurchasing(true);
     try {
       await db.purchaseMod(currentUser, mod);
@@ -243,6 +344,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
   };
 
   const handleSaveFakeStats = async () => {
+    if (!mod) return;
     try {
         await db.updateModFakeStats(mod.id, {
             views: Number(fakeViews),
@@ -260,6 +362,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
   };
 
   const handleResetFakeStats = async () => {
+    if (!mod) return;
     try {
         await db.resetModFakeStats(mod.id);
         setShowFakeStatsModal(false);
@@ -412,7 +515,13 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
 
                     <button 
                        onClick={() => {
-                          const link = `https://over-mods.vercel.app/${mod.modCode || mod.shareCode || mod.id}`;
+                          const code = mod.shareCode || mod.id;
+                          let path = code;
+                          if (mod.type === 'Mod') path = `mod/${code}`;
+                          else if (mod.type === 'Resource Pack') path = `rp/${code}`;
+                          else if (mod.type === 'Map') path = `map/${code}`;
+                          else if (mod.type === 'Modpack') path = `modpack/${code}`;
+                          const link = `https://over-mods.vercel.app/${path}`;
                           navigator.clipboard.writeText(link);
                           setCopyCodeFeedback(true);
                           setTimeout(() => setCopyCodeFeedback(false), 2000);
