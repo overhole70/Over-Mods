@@ -19,6 +19,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentView, onViewC
   const { t, isRTL } = useTranslation();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
+  // Check if running in WebView or Capacitor
+  const isApp = typeof navigator !== 'undefined' && (
+    navigator.userAgent.includes('wv') ||
+    navigator.userAgent.includes('WebView') ||
+    navigator.userAgent.includes('Capacitor')
+  );
+
   const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: <Home size={22} />, desc: 'إضافات ومودات البيدروك' },
     { id: 'news', label: 'الأخبار والمنشورات', icon: <Newspaper size={22} />, desc: 'آخر تحديثات المنصة' },
@@ -29,6 +36,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentView, onViewC
     { id: 'downloads', label: 'التنزيلات', icon: <Download size={22} />, desc: 'الملفات المحملة' },
     { id: 'settings', label: 'الإعدادات', icon: <Settings size={22} />, desc: 'ضبط الحساب والأمان' },
   ];
+
+  if (!isApp) {
+    menuItems.splice(6, 0, { id: 'download', label: 'تحميل التطبيق', icon: <Download size={22} />, desc: 'نسخة الأندرويد الرسمية' });
+  }
 
   return (
     <>

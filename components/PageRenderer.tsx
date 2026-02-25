@@ -25,6 +25,7 @@ import AdminDashboard from './AdminDashboard';
 import StatsDashboard from './StatsDashboard';
 import QuestionsView from './QuestionsView';
 import CompleteProfileView from './CompleteProfileView';
+import DownloadSection from './DownloadSection';
 
 interface PageRendererProps {
   activePage: string;
@@ -328,6 +329,10 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   if (normalizedPageId === 'questions') {
     if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('questions'); }} />;
     return <QuestionsView currentUser={currentUser} onBack={() => onNavigate('home')} />;
+  }
+
+  if (normalizedPageId === 'download') {
+    return <DownloadSection />;
   }
 
   // --- DYNAMIC RENDER ---

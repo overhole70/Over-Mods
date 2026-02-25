@@ -4,6 +4,7 @@ import App from './App';
 import { LanguageProvider } from './LanguageContext';
 import { ThemeProvider } from './ThemeContext';
 import { BrowserRouter } from 'react-router-dom';
+import './index.css';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
