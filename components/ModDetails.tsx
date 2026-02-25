@@ -409,6 +409,19 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
                           {copyCodeFeedback ? <CheckCircle size={18} /> : <Copy size={18} />}
                        </button>
                     </div>
+
+                    <button 
+                       onClick={() => {
+                          const link = `https://over-mods.vercel.app/${mod.modCode || mod.shareCode || mod.id}`;
+                          navigator.clipboard.writeText(link);
+                          setCopyCodeFeedback(true);
+                          setTimeout(() => setCopyCodeFeedback(false), 2000);
+                       }} 
+                       className="w-full py-4 bg-zinc-900 text-zinc-400 border border-white/5 rounded-3xl font-black text-sm hover:text-white hover:bg-zinc-800 transition-all flex items-center justify-center gap-2 active:scale-95"
+                     >
+                        {copyCodeFeedback ? <CheckCircle size={18} className="text-green-500" /> : <Share2 size={18} />}
+                        {copyCodeFeedback ? 'تم نسخ الرابط' : 'نسخ رابط المود'}
+                     </button>
                     
                     <button 
                       onClick={handleDownloadClick} 

@@ -127,27 +127,37 @@ const PageRenderer: React.FC<PageRendererProps> = ({
 
     try {
       // 2. Try fetching by shareCode
-      let q = query(collection(firestore, 'mods'), where('shareCode', '==', code));
-      let snap = await getDocs(q);
+      const qShare = query(collection(firestore, 'mods'), where('shareCode', '==', code));
+      const snapShare = await getDocs(qShare);
       
-      if (snap.empty) {
-         // 2.1 Try fetching by modCode
-         q = query(collection(firestore, 'mods'), where('modCode', '==', code));
-         snap = await getDocs(q);
+      if (!snapShare.empty) {
+        setFetchedMod({ id: snapShare.docs[0].id, ...snapShare.docs[0].data() } as Mod);
+        setLoadingDynamic(false);
+        return;
       }
 
-      if (!snap.empty) {
-        setFetchedMod({ id: snap.docs[0].id, ...snap.docs[0].data() } as Mod);
-      } else {
-        // 3. Fallback: Try fetching by Document ID (Legacy mods support)
-        const docRef = doc(firestore, 'mods', code);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-           setFetchedMod({ id: docSnap.id, ...docSnap.data() } as Mod);
-        } else {
-           setNotFound(true);
+      // 2.1 Try fetching by modCode
+      try {
+        const qModCode = query(collection(firestore, 'mods'), where('modCode', '==', code));
+        const snapModCode = await getDocs(qModCode);
+
+        if (!snapModCode.empty) {
+          setFetchedMod({ id: snapModCode.docs[0].id, ...snapModCode.docs[0].data() } as Mod);
+          setLoadingDynamic(false);
+          return;
         }
+      } catch (err) {
+        console.warn("ModCode query failed (likely permissions), falling back to ID check.", err);
+      }
+
+      // 3. Fallback: Try fetching by Document ID (Legacy mods support)
+      const docRef = doc(firestore, 'mods', code);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+          setFetchedMod({ id: docSnap.id, ...docSnap.data() } as Mod);
+      } else {
+          setNotFound(true);
       }
     } catch (e) {
       console.error("Error fetching mod:", e);
