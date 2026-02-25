@@ -117,8 +117,8 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   };
 
   const fetchModByShareCodeOrId = async (code: string) => {
-    // 1. Check loaded mods first (cache) - check both shareCode and ID
-    const foundLocal = mods.find(m => m.shareCode === code || m.id === code);
+    // 1. Check loaded mods first (cache) - check both shareCode and ID and modCode
+    const foundLocal = mods.find(m => m.shareCode === code || m.id === code || m.modCode === code);
     if (foundLocal) {
       setFetchedMod(foundLocal);
       setLoadingDynamic(false);
@@ -127,9 +127,15 @@ const PageRenderer: React.FC<PageRendererProps> = ({
 
     try {
       // 2. Try fetching by shareCode
-      const q = query(collection(firestore, 'mods'), where('shareCode', '==', code));
-      const snap = await getDocs(q);
+      let q = query(collection(firestore, 'mods'), where('shareCode', '==', code));
+      let snap = await getDocs(q);
       
+      if (snap.empty) {
+         // 2.1 Try fetching by modCode
+         q = query(collection(firestore, 'mods'), where('modCode', '==', code));
+         snap = await getDocs(q);
+      }
+
       if (!snap.empty) {
         setFetchedMod({ id: snap.docs[0].id, ...snap.docs[0].data() } as Mod);
       } else {

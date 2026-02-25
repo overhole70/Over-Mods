@@ -144,7 +144,7 @@ const HomeView: React.FC<HomeViewProps> = ({
             <ModCard 
               key={m.id} 
               mod={m} 
-              onClick={() => onModClick(m)} 
+              onClick={() => onNavigate(m.modCode || m.shareCode || m.id)} 
               isFollowing={currentUser?.following?.includes(m.publisherId) || false} 
               onFollow={(e) => { e.stopPropagation(); db.followUser(currentUser!.id, m.publisherId); }} 
             />

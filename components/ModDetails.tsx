@@ -396,9 +396,16 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod, allMods, currentUser, onDo
                     <div className="bg-zinc-900/50 p-5 rounded-2xl border border-white/5 flex items-center justify-between group">
                        <div>
                           <p className="text-zinc-600 text-[8px] font-black uppercase tracking-widest mb-1">رمز المشاركة</p>
-                          <span className="theme-text-primary font-black text-lg ltr tracking-widest">{mod.shareCode}</span>
+                          <span className="theme-text-primary font-black text-lg ltr tracking-widest">{mod.modCode || mod.shareCode}</span>
                        </div>
-                       <button onClick={copyShareCode} className={`p-3 rounded-xl transition-all ${copyCodeFeedback ? 'theme-bg-primary text-black' : 'bg-zinc-950 text-zinc-600'}`}>
+                       <button onClick={() => {
+                          const code = mod.modCode || mod.shareCode;
+                          if (code) {
+                            navigator.clipboard.writeText(code);
+                            setCopyCodeFeedback(true);
+                            setTimeout(() => setCopyCodeFeedback(false), 2000);
+                          }
+                       }} className={`p-3 rounded-xl transition-all ${copyCodeFeedback ? 'theme-bg-primary text-black' : 'bg-zinc-950 text-zinc-600'}`}>
                           {copyCodeFeedback ? <CheckCircle size={18} /> : <Copy size={18} />}
                        </button>
                     </div>

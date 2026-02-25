@@ -227,6 +227,7 @@ export interface ModStats {
 export interface Mod {
   id: string;
   shareCode: string; 
+  modCode?: string; // Unique URL slug
   title: string;
   description: string;
   publisherId: string;
