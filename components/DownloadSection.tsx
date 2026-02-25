@@ -36,9 +36,11 @@ const DownloadSection: React.FC = () => {
         </div>
 
         {/* Download Button */}
-        <button 
-          onClick={handleDownload}
-          className="group relative w-full max-w-xs bg-white hover:bg-zinc-100 text-black p-1 rounded-[2rem] transition-all duration-300 shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)] hover:shadow-[0_0_60px_-10px_rgba(255,255,255,0.5)] active:scale-95"
+        <a 
+          href="https://apk.e-droid.net/apk/app3905250-i471nb.apk?v=5"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group relative w-full max-w-xs bg-white hover:bg-zinc-100 text-black p-1 rounded-[2rem] transition-all duration-300 shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)] hover:shadow-[0_0_60px_-10px_rgba(255,255,255,0.5)] active:scale-95 block text-decoration-none"
         >
           <div className="absolute inset-0 rounded-[2rem] border-2 border-black/5"></div>
           <div className="flex items-center justify-between px-6 py-4">
@@ -50,7 +52,7 @@ const DownloadSection: React.FC = () => {
               <Smartphone size={24} fill="currentColor" />
             </div>
           </div>
-        </button>
+        </a>
 
         {/* Footer Info */}
         <div className="pt-8 flex flex-col gap-2 text-zinc-600 text-[10px] font-bold uppercase tracking-widest">
