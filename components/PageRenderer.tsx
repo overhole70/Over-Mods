@@ -51,6 +51,7 @@ interface PageRendererProps {
   onLoadMoreMods?: () => void;
   hasMoreMods?: boolean;
   isLoadingMoreMods?: boolean;
+  externalMod?: Mod | null;
 }
 
 const PageRenderer: React.FC<PageRendererProps> = ({
@@ -59,14 +60,23 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   searchTerm, setSearchTerm, isRefreshing, initializeData, trackUserInterest,
   isRTL, isAdminAuthenticated, setIsAdminAuthenticated, setShowAdminModal, setCurrentUser,
   editingItem, setEditingItem, db,
-  onLoadMoreMods, hasMoreMods, isLoadingMoreMods
+  onLoadMoreMods, hasMoreMods, isLoadingMoreMods,
+  externalMod
 }) => {
   // Removed hooks
   
   const [fetchedUser, setFetchedUser] = useState<User | null>(null);
-  const [fetchedMod, setFetchedMod] = useState<Mod | null>(null);
+  const [fetchedMod, setFetchedMod] = useState<Mod | null>(externalMod || null);
   const [loadingDynamic, setLoadingDynamic] = useState(false);
   const [notFound, setNotFound] = useState(false);
+
+  // Update fetchedMod if externalMod changes
+  useEffect(() => {
+    if (externalMod) {
+      setFetchedMod(externalMod);
+      setLoadingDynamic(false);
+    }
+  }, [externalMod]);
 
   // Helper to determine if a page is static
   const isStaticPage = (id: string) => {
@@ -83,6 +93,13 @@ const PageRenderer: React.FC<PageRendererProps> = ({
 
   // Reset dynamic state when pageId changes
   useEffect(() => {
+    if (externalMod) {
+      setFetchedMod(externalMod);
+      setLoadingDynamic(false);
+      setNotFound(false);
+      return;
+    }
+
     setFetchedUser(null);
     setFetchedMod(null);
     setNotFound(false);
@@ -98,7 +115,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
     } else {
       setLoadingDynamic(false);
     }
-  }, [activePage, isStatic]); 
+  }, [activePage, isStatic, externalMod]); 
 
   const fetchUserByUsername = async (username: string) => {
     try {
