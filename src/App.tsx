@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import PageRenderer from './components/PageRenderer';
-import ModDetails from './components/ModDetails';
 import { db, auth } from './db';
 import { AppMetadata } from './types/sdui';
 import { User, Mod, MinecraftServer, NewsItem } from './types';
@@ -25,47 +24,22 @@ const PageWrapper = (props: any) => {
   );
 };
 
-// Wrapper for ModDetails to handle navigation and props
-const ModDetailsWrapper = (props: any) => {
-  const navigate = useNavigate();
-  
-  const handleModClick = (m: Mod) => {
-      let prefix = 'mod';
-      if (m.type === 'Resource Pack') prefix = 'rp';
-      else if (m.type === 'Map') prefix = 'map';
-      else if (m.type === 'Modpack') prefix = 'modpack';
-      navigate(`/${prefix}/${m.shareCode || m.id}`);
-  };
-
-  return (
-    <ModDetails 
-      {...props} 
-      onBack={() => navigate('/')}
-      onModClick={handleModClick}
-      onPublisherClick={(pid: string) => navigate(`/profile/${pid}`)}
-    />
-  );
-};
-
 export default function App() {
   const [metadata, setMetadata] = useState<AppMetadata | null>(null);
   const [isReady, setIsReady] = useState(false);
   
-  // Data State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [mods, setMods] = useState<Mod[]>([]);
   const [servers, setServers] = useState<MinecraftServer[]>([]);
   const [newsSnippet, setNewsSnippet] = useState<NewsItem | null>(null);
   const [userDownloads, setUserDownloads] = useState<Mod[]>([]);
   
-  // UI State
   const [searchTerm, setSearchTerm] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Mod | MinecraftServer | null>(null);
   
-  // Pagination State
   const [hasMoreMods, setHasMoreMods] = useState(false);
   const [isLoadingMoreMods, setIsLoadingMoreMods] = useState(false);
 
@@ -119,11 +93,13 @@ export default function App() {
     init();
   }, []);
 
-  const trackUserInterest = (category: string) => {
-    console.log("Tracking interest:", category);
-  };
-
-  if (!isReady) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-lime-500" /></div>;
+  if (!isReady) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 className="animate-spin text-lime-500" />
+      </div>
+    );
+  }
 
   if (metadata && metadata.force_update && metadata.min_version > CURRENT_VERSION) {
     return (
@@ -133,7 +109,9 @@ export default function App() {
             <Download className="text-black" size={40} />
           </div>
           <h1 className="text-3xl font-black text-white mb-4">Update Required</h1>
-          <p className="text-zinc-500 mb-8 font-medium">To continue using the app, please download the latest version from the store.</p>
+          <p className="text-zinc-500 mb-8 font-medium">
+            To continue using the app, please download the latest version from the store.
+          </p>
           <button 
             onClick={() => window.open(metadata.update_url, '_blank')}
             className="w-full py-5 bg-lime-500 text-black rounded-2xl font-black text-lg active:scale-95 transition-all"
@@ -145,19 +123,6 @@ export default function App() {
     );
   }
 
-  // Common props for ModDetails
-  const modDetailsDataProps = {
-    allMods: mods,
-    currentUser,
-    onDownload: () => {},
-    onEdit: () => {},
-    onDelete: () => {},
-    isFollowing: false,
-    onFollow: () => {},
-    isOnline: true,
-    isAdmin: isAdminAuthenticated
-  };
-
   const commonProps = {
     currentUser,
     mods,
@@ -168,7 +133,6 @@ export default function App() {
     setSearchTerm,
     isRefreshing,
     initializeData,
-    trackUserInterest,
     isRTL: true,
     isAdminAuthenticated,
     setIsAdminAuthenticated,
@@ -185,11 +149,6 @@ export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/mod/:code" element={<ModDetailsWrapper {...modDetailsDataProps} expectedType="Mod" />} />
-        <Route path="/map/:code" element={<ModDetailsWrapper {...modDetailsDataProps} expectedType="Map" />} />
-        <Route path="/rp/:code" element={<ModDetailsWrapper {...modDetailsDataProps} expectedType="Resource Pack" />} />
-        <Route path="/modpack/:code" element={<ModDetailsWrapper {...modDetailsDataProps} expectedType="Modpack" />} />
-        
         <Route path="/:pageId" element={<PageWrapper {...commonProps} />} />
         <Route path="/" element={<Navigate to="/home" replace />} />
       </Routes>

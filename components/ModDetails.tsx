@@ -1,8 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { firestore } from '../db';
+import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Download, ShieldCheck, Loader2, CheckCircle, Edit, MessageSquare, Send, User as UserIcon, Flag, Star, Clock, X, Info, Sparkles, LayoutGrid, Copy, Share2, Trash2, Youtube, ThumbsUp, ThumbsDown, Calendar, FileText, Database, Layers, AlertTriangle, Play, Eye, Zap, Tag, Monitor, HardDrive, UserPlus, UserMinus, Hash, ImageIcon, Lock, CheckCircle2, TrendingUp, Ghost } from 'lucide-react';
 import { Mod, User, Comment } from '../types';
 import { db } from '../db';
@@ -22,14 +20,12 @@ interface ModDetailsProps {
   onFollow: () => void;
   isOnline: boolean;
   isAdmin?: boolean;
-  expectedType?: string;
 }
 
 const OWNER_EMAIL = 'overmods1@gmail.com';
 
-const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentUser, onDownload, onEdit, onDelete, onBack, onModClick, onPublisherClick, isFollowing: initialIsFollowing, onFollow, isOnline, isAdmin, expectedType }) => {
+const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentUser, onDownload, onEdit, onDelete, onBack, onModClick, onPublisherClick, isFollowing: initialIsFollowing, onFollow, isOnline, isAdmin }) => {
   const { t, isRTL } = useTranslation();
-  const { code } = useParams();
   const navigate = useNavigate();
 
   const [mod, setMod] = useState<Mod | null>(propMod || null);
@@ -80,52 +76,17 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentU
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
 
-  // Fetch Logic
+  // Update local state when prop changes
   useEffect(() => {
     if (propMod) {
       setMod(propMod);
       setIsLoading(false);
-      return;
-    }
-
-    if (!code) {
+    } else {
+      // If no mod provided, show not found
       setIsLoading(false);
-      // If no code and no propMod, it's an error unless handled elsewhere
-      return;
+      setNotFound(true);
     }
-
-    const fetchMod = async () => {
-      setIsLoading(true);
-      setNotFound(false);
-      try {
-        // Query by shareCode (NOT by id)
-        const q = query(collection(firestore, 'mods'), where('shareCode', '==', code), limit(1));
-        const snap = await getDocs(q);
-
-        if (!snap.empty) {
-          const data = snap.docs[0].data() as Mod;
-          const foundMod = { id: snap.docs[0].id, ...data };
-          
-          // Verify type matches route
-          if (expectedType && foundMod.type !== expectedType) {
-             console.warn(`Type mismatch: Expected ${expectedType}, got ${foundMod.type}`);
-             setNotFound(true);
-          } else {
-             setMod(foundMod);
-          }
-        } else {
-          setNotFound(true);
-        }
-      } catch (e) {
-        console.error("Fetch error:", e);
-        setNotFound(true);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchMod();
-  }, [code, propMod, expectedType]);
+  }, [propMod]);
 
   useEffect(() => {
     if (!mod) return;
@@ -509,13 +470,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentU
 
                     <button 
                        onClick={() => {
-                          const code = mod.shareCode || mod.id;
-                          let path = code;
-                          if (mod.type === 'Mod') path = `mod/${code}`;
-                          else if (mod.type === 'Resource Pack') path = `rp/${code}`;
-                          else if (mod.type === 'Map') path = `map/${code}`;
-                          else if (mod.type === 'Modpack') path = `modpack/${code}`;
-                          const link = `https://over-mods.vercel.app/${path}`;
+                          const link = `https://over-mods.vercel.app/${mod.shareCode || mod.id}`;
                           navigator.clipboard.writeText(link);
                           setCopyCodeFeedback(true);
                           setTimeout(() => setCopyCodeFeedback(false), 2000);

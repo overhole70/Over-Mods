@@ -939,9 +939,12 @@ export class PlatformDB {
 
   // Live Listeners for Chat
   subscribeToRecentChats(userId: string, callback: (partners: string[]) => void): Unsubscribe {
+    if (!userId) return () => {};
+    
     // We listen to sent and received messages separately
-    const sentQ = query(collection(firestore, 'messages'), where('senderId', '==', userId), limit(50));
-    const receivedQ = query(collection(firestore, 'messages'), where('receiverId', '==', userId), limit(50));
+    // Removed limit(50) to avoid potential Firestore internal assertion errors with onSnapshot
+    const sentQ = query(collection(firestore, 'messages'), where('senderId', '==', userId));
+    const receivedQ = query(collection(firestore, 'messages'), where('receiverId', '==', userId));
 
     let sentData: any[] = [];
     let receivedData: any[] = [];
@@ -974,6 +977,8 @@ export class PlatformDB {
   }
 
   subscribeToMessages(user1Id: string, user2Id: string, callback: (msgs: ChatMessage[]) => void): Unsubscribe {
+    if (!user1Id || !user2Id) return () => {};
+
     const q1 = query(collection(firestore, 'messages'), where('senderId', '==', user1Id), where('receiverId', '==', user2Id));
     const q2 = query(collection(firestore, 'messages'), where('senderId', '==', user2Id), where('receiverId', '==', user1Id));
 

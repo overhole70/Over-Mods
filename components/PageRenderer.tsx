@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 // Removed react-router-dom hooks
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, limit } from 'firebase/firestore';
 import { firestore } from '../db';
-import { Mod, User, MinecraftServer, NewsItem, View } from '../types';
+import { Mod, User, MinecraftServer, NewsItem } from '../types';
 import { Loader2, Ghost } from 'lucide-react';
 
 // Components
@@ -51,7 +51,6 @@ interface PageRendererProps {
   onLoadMoreMods?: () => void;
   hasMoreMods?: boolean;
   isLoadingMoreMods?: boolean;
-  externalMod?: Mod | null;
 }
 
 const PageRenderer: React.FC<PageRendererProps> = ({
@@ -60,23 +59,13 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   searchTerm, setSearchTerm, isRefreshing, initializeData, trackUserInterest,
   isRTL, isAdminAuthenticated, setIsAdminAuthenticated, setShowAdminModal, setCurrentUser,
   editingItem, setEditingItem, db,
-  onLoadMoreMods, hasMoreMods, isLoadingMoreMods,
-  externalMod
+  onLoadMoreMods, hasMoreMods, isLoadingMoreMods
 }) => {
-  // Removed hooks
   
   const [fetchedUser, setFetchedUser] = useState<User | null>(null);
-  const [fetchedMod, setFetchedMod] = useState<Mod | null>(externalMod || null);
+  const [selectedMod, setSelectedMod] = useState<Mod | null>(null);
   const [loadingDynamic, setLoadingDynamic] = useState(false);
   const [notFound, setNotFound] = useState(false);
-
-  // Update fetchedMod if externalMod changes
-  useEffect(() => {
-    if (externalMod) {
-      setFetchedMod(externalMod);
-      setLoadingDynamic(false);
-    }
-  }, [externalMod]);
 
   // Helper to determine if a page is static
   const isStaticPage = (id: string) => {
@@ -93,29 +82,24 @@ const PageRenderer: React.FC<PageRendererProps> = ({
 
   // Reset dynamic state when pageId changes
   useEffect(() => {
-    if (externalMod) {
-      setFetchedMod(externalMod);
-      setLoadingDynamic(false);
-      setNotFound(false);
-      return;
+    // If navigating away from a mod view (e.g. back to home), clear selectedMod
+    if (isStatic) {
+        setSelectedMod(null);
     }
 
     setFetchedUser(null);
-    setFetchedMod(null);
     setNotFound(false);
     
-    // Only fetch if NOT a static page
+    // Only fetch if NOT a static page AND it starts with @ (user profile)
     if (!isStatic) {
-      setLoadingDynamic(true);
       if (activePage.startsWith('@')) {
+        setLoadingDynamic(true);
         fetchUserByUsername(activePage.substring(1));
-      } else {
-        fetchModByShareCodeOrId(activePage);
-      }
+      } 
     } else {
       setLoadingDynamic(false);
     }
-  }, [activePage, isStatic, externalMod]); 
+  }, [activePage, isStatic]); 
 
   const fetchUserByUsername = async (username: string) => {
     try {
@@ -133,55 +117,53 @@ const PageRenderer: React.FC<PageRendererProps> = ({
     }
   };
 
-  const fetchModByShareCodeOrId = async (code: string) => {
-    // 1. Check loaded mods first (cache)
+  const fetchModAndSelect = async (code: string) => {
+    if (!code) return;
+    
+    // Check cache
     const foundLocal = mods.find(m => m.shareCode === code || m.id === code || m.modCode === code);
     if (foundLocal) {
-      setFetchedMod(foundLocal);
-      setLoadingDynamic(false);
+      setSelectedMod(foundLocal);
       return;
     }
 
+    setLoadingDynamic(true);
     try {
-      // 2. Try fetching by shareCode
-      const qShare = query(collection(firestore, 'mods'), where('shareCode', '==', code));
+      // Try shareCode
+      const qShare = query(collection(firestore, 'mods'), where('shareCode', '==', code), limit(1));
       const snapShare = await getDocs(qShare);
-      
       if (!snapShare.empty) {
-        setFetchedMod({ id: snapShare.docs[0].id, ...snapShare.docs[0].data() } as Mod);
-        setLoadingDynamic(false);
+        setSelectedMod({ id: snapShare.docs[0].id, ...snapShare.docs[0].data() } as Mod);
         return;
       }
 
-      // 2.1 Try fetching by modCode
-      try {
-        const qModCode = query(collection(firestore, 'mods'), where('modCode', '==', code));
-        const snapModCode = await getDocs(qModCode);
-
-        if (!snapModCode.empty) {
-          setFetchedMod({ id: snapModCode.docs[0].id, ...snapModCode.docs[0].data() } as Mod);
-          setLoadingDynamic(false);
-          return;
-        }
-      } catch (err) {
-        console.warn("ModCode query failed (likely permissions), falling back to ID check.", err);
+      // Try modCode
+      const qModCode = query(collection(firestore, 'mods'), where('modCode', '==', code), limit(1));
+      const snapModCode = await getDocs(qModCode);
+      if (!snapModCode.empty) {
+        setSelectedMod({ id: snapModCode.docs[0].id, ...snapModCode.docs[0].data() } as Mod);
+        return;
       }
 
-      // 3. Fallback: Try fetching by Document ID (Legacy mods support)
-      const docRef = doc(firestore, 'mods', code);
-      const docSnap = await getDoc(docRef);
-      
-      if (docSnap.exists()) {
-          setFetchedMod({ id: docSnap.id, ...docSnap.data() } as Mod);
-      } else {
-          setNotFound(true);
+      // Try ID
+      if (code.indexOf('/') === -1) {
+        const docRef = doc(firestore, 'mods', code);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            setSelectedMod({ id: docSnap.id, ...docSnap.data() } as Mod);
+            return;
+        }
       }
     } catch (e) {
       console.error("Error fetching mod:", e);
-      setNotFound(true);
     } finally {
       setLoadingDynamic(false);
     }
+  };
+
+  const handleModClick = (m: Mod) => {
+    setSelectedMod(m);
+    trackUserInterest(m.category);
   };
 
   if (loadingDynamic) {
@@ -210,19 +192,24 @@ const PageRenderer: React.FC<PageRendererProps> = ({
     return <CompleteProfileView currentUser={currentUser} onComplete={(u) => { setCurrentUser(u); onNavigate('home'); }} />;
   }
 
-  const navigateToMod = (m: Mod) => {
-    if (m.shareCode) {
-        let prefix = 'mod';
-        if (m.type === 'Resource Pack') prefix = 'rp';
-        else if (m.type === 'Map') prefix = 'map';
-        else if (m.type === 'Modpack') prefix = 'modpack';
-        onNavigate(`${prefix}/${m.shareCode}`);
-    } else {
-        // Fallback to ID route (legacy)
-        onNavigate(m.id);
-    }
-    trackUserInterest(m.category);
-  };
+  // If a mod is selected, RENDER IT (Overrides other views)
+  if (selectedMod) {
+    return <ModDetails 
+      mod={selectedMod} 
+      allMods={mods} 
+      currentUser={currentUser} 
+      onBack={() => { setSelectedMod(null); }} 
+      onModClick={handleModClick} 
+      isOnline={true} 
+      isAdmin={isAdminAuthenticated || currentUser?.role === 'Admin'} 
+      onPublisherClick={(pid) => db.get('users', pid).then((u: any) => { if(u) onNavigate(`@${u.username}`); })} 
+      isFollowing={currentUser?.following?.includes(selectedMod.publisherId) || false} 
+      onFollow={() => db.followUser(currentUser!.id, selectedMod.publisherId)} 
+      onEdit={() => { setEditingItem(selectedMod); onNavigate('upload'); }} 
+      onDelete={() => db.deleteMod(selectedMod.id).then(() => { initializeData(); setSelectedMod(null); })} 
+      onDownload={() => trackUserInterest(selectedMod.category)} 
+    />;
+  }
 
   if (normalizedPageId === 'home') {
     return <HomeView 
@@ -232,7 +219,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       setSearchTerm={setSearchTerm} 
       isRefreshing={isRefreshing} 
       onRefresh={initializeData} 
-      onModClick={navigateToMod} 
+      onModClick={handleModClick} 
       onNavigate={(path) => onNavigate(path)} 
       isRTL={isRTL} 
       trackUserInterest={trackUserInterest}
@@ -250,7 +237,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       mods={mods.filter(m => m.publisherId === currentUser.id)} 
       onLogout={() => { db.logout(); setCurrentUser(null); onNavigate('login'); }} 
       onEditMod={(m) => { setEditingItem(m); onNavigate('upload'); }} 
-      onModClick={navigateToMod} 
+      onModClick={handleModClick} 
       onFollow={async () => {}} 
       onEditProfile={() => onNavigate('edit-profile')} 
       onBack={() => onNavigate('home')}
@@ -325,11 +312,11 @@ const PageRenderer: React.FC<PageRendererProps> = ({
 
   if (normalizedPageId === 'notifications') {
     if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('notifications'); }} />;
-    return <NotificationsView currentUser={currentUser} onModClick={(link) => onNavigate(link)} onBack={() => onNavigate('home')} />;
+    return <NotificationsView currentUser={currentUser} onModClick={(link) => fetchModAndSelect(link)} onBack={() => onNavigate('home')} />;
   }
 
   if (normalizedPageId === 'downloads') {
-    return <DownloadsView mods={userDownloads} onModClick={navigateToMod} />;
+    return <DownloadsView mods={userDownloads} onModClick={handleModClick} />;
   }
 
   if (normalizedPageId === 'friends') {
@@ -392,28 +379,10 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       mods={mods.filter(m => m.publisherId === fetchedUser.id)} 
       onLogout={() => { db.logout(); setCurrentUser(null); onNavigate('login'); }} 
       onEditMod={(m) => {}} 
-      onModClick={navigateToMod} 
+      onModClick={handleModClick} 
       onFollow={async () => { await db.followUser(currentUser!.id, fetchedUser.id); }} 
       onEditProfile={() => onNavigate('edit-profile')} 
       onBack={() => onNavigate('home')} 
-    />;
-  }
-
-  if (fetchedMod) {
-    return <ModDetails 
-      mod={fetchedMod} 
-      allMods={mods} 
-      currentUser={currentUser} 
-      onBack={() => onNavigate('home')} 
-      onModClick={navigateToMod} 
-      isOnline={true} 
-      isAdmin={isAdminAuthenticated || currentUser?.role === 'Admin'} 
-      onPublisherClick={(pid) => db.get('users', pid).then((u: any) => { if(u) onNavigate(`@${u.username}`); })} 
-      isFollowing={currentUser?.following?.includes(fetchedMod.publisherId) || false} 
-      onFollow={() => db.followUser(currentUser!.id, fetchedMod.publisherId)} 
-      onEdit={() => { setEditingItem(fetchedMod); onNavigate('upload'); }} 
-      onDelete={() => db.deleteMod(fetchedMod.id).then(() => { initializeData(); onNavigate('home'); })} 
-      onDownload={() => trackUserInterest(fetchedMod.category)} 
     />;
   }
 
