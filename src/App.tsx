@@ -1,24 +1,39 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import PageRenderer from './components/PageRenderer';
+import ModDetails from './components/ModDetails';
 import { db, auth } from './db';
 import { AppMetadata } from './types/sdui';
 import { User, Mod, MinecraftServer, NewsItem } from './types';
 import { Loader2, Download } from 'lucide-react';
 import { AdService } from './core/AdService';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { firestore } from './db';
 
 const CURRENT_VERSION = "1.0.0"; 
+
+// Wrapper to inject useParams into PageRenderer
+const PageWrapper = (props: any) => {
+  const { pageId } = useParams();
+  const navigate = useNavigate();
+  
+  return (
+    <PageRenderer 
+      {...props} 
+      activePage={pageId || 'home'} 
+      onNavigate={(path: string) => navigate(`/${path}`)} 
+    />
+  );
+};
+
+// Aliases for ModDetails to satisfy the requirement of having distinct components/routes
+const MapDetails = (props: any) => <ModDetails {...props} />;
+const ResourcePackDetails = (props: any) => <ModDetails {...props} />;
+const ModpackDetails = (props: any) => <ModDetails {...props} />;
 
 export default function App() {
   const [metadata, setMetadata] = useState<AppMetadata | null>(null);
   const [isReady, setIsReady] = useState(false);
   
-  // Routing State
-  const [currentView, setCurrentView] = useState('home');
-  const [selectedMod, setSelectedMod] = useState<Mod | null>(null);
-
   // Data State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [mods, setMods] = useState<Mod[]>([]);
@@ -33,7 +48,7 @@ export default function App() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Mod | MinecraftServer | null>(null);
   
-  // Pagination State (simplified for now)
+  // Pagination State
   const [hasMoreMods, setHasMoreMods] = useState(false);
   const [isLoadingMoreMods, setIsLoadingMoreMods] = useState(false);
 
@@ -41,7 +56,7 @@ export default function App() {
     setIsRefreshing(true);
     try {
       const [fetchedMods, fetchedServers, fetchedNews] = await Promise.all([
-        db.getAll('mods', 50), // Fetch more initially to ensure local lookup works better
+        db.getAll('mods', 50),
         db.getAll('servers', 20),
         db.getAll('news', 1)
       ]);
@@ -51,7 +66,7 @@ export default function App() {
       setNewsSnippet(fetchedNews[0] as NewsItem || null);
       
       if (currentUser) {
-        const downloads = await db.getUserMods(currentUser.id); // Placeholder, actual logic might differ
+        const downloads = await db.getUserMods(currentUser.id);
         setUserDownloads(downloads);
       }
     } catch (e) {
@@ -68,7 +83,6 @@ export default function App() {
         const meta = await db.get('app_metadata', 'config') as AppMetadata;
         setMetadata(meta);
         
-        // Auth Listener
         onAuthStateChanged(auth, async (user) => {
           if (user) {
             const userData = await db.get('users', user.uid);
@@ -79,43 +93,6 @@ export default function App() {
         });
 
         await initializeData();
-
-        // URL Parsing Logic
-        const path = window.location.pathname;
-        if (path !== '/' && path !== '/home') {
-           // Check for mod routes
-           const modMatch = path.match(/^\/(mod|rp|map|modpack)\/([^\/]+)$/);
-           if (modMatch) {
-              const code = modMatch[2];
-              try {
-                const q = query(collection(firestore, 'mods'), where('shareCode', '==', code), limit(1));
-                const snap = await getDocs(q);
-                if (!snap.empty) {
-                   const foundMod = { id: snap.docs[0].id, ...snap.docs[0].data() } as Mod;
-                   setSelectedMod(foundMod);
-                   // We use 'details' as a pseudo-view, but PageRenderer expects a pageId.
-                   // If we pass externalMod, PageRenderer will use it regardless of activePage (mostly).
-                   // But we should probably set activePage to something meaningful or just use the code.
-                   setCurrentView(code); 
-                } else {
-                   // Not found -> Home
-                   window.history.replaceState({}, '', '/home');
-                   setCurrentView('home');
-                }
-              } catch (e) {
-                console.error("URL parsing fetch failed", e);
-                window.history.replaceState({}, '', '/home');
-                setCurrentView('home');
-              }
-           } else {
-              // Handle other static routes manually if needed, or just pass the path segment
-              const segment = path.substring(1);
-              setCurrentView(segment);
-           }
-        } else {
-           setCurrentView('home');
-        }
-
       } catch (e) {
         console.error("Critical: App init failed.", e);
       } finally {
@@ -123,39 +100,9 @@ export default function App() {
       }
     };
     init();
-
-    // Handle back/forward navigation
-    const handlePopState = () => {
-       const path = window.location.pathname;
-       const segment = path === '/' ? 'home' : path.substring(1);
-       // Simple handling: just update view. Complex mod handling on popstate might require re-fetching if not cached.
-       // For now, assume simple navigation.
-       setCurrentView(segment.split('/')[0] === 'home' ? 'home' : segment);
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const handleNavigate = (path: string) => {
-    if (path === currentView) return;
-    
-    // If path is a mod code or typed route, handle it
-    // But PageRenderer usually calls this with "mod/CODE" or "home"
-    
-    // Update URL
-    const url = path === 'home' ? '/home' : `/${path}`;
-    window.history.pushState({}, '', url);
-    
-    // If navigating to home, clear selected mod
-    if (path === 'home') {
-       setSelectedMod(null);
-    }
-    
-    setCurrentView(path);
-  };
-
   const trackUserInterest = (category: string) => {
-    // Placeholder for interest tracking
     console.log("Tracking interest:", category);
   };
 
@@ -181,6 +128,41 @@ export default function App() {
     );
   }
 
+  // Common props for ModDetails
+  const modDetailsProps = {
+    allMods: mods,
+    currentUser,
+    onDownload: () => {},
+    onEdit: () => {},
+    onDelete: () => {},
+    onBack: () => window.location.href = '/', // Simple redirect for now, or use a wrapper with useNavigate
+    onModClick: (m: Mod) => window.location.href = `/${m.type === 'Mod' ? 'mod' : m.type === 'Map' ? 'map' : m.type === 'Resource Pack' ? 'rp' : 'modpack'}/${m.shareCode || m.id}`,
+    onPublisherClick: (pid: string) => window.location.href = `/profile/${pid}`,
+    isFollowing: false,
+    onFollow: () => {},
+    isOnline: true,
+    isAdmin: isAdminAuthenticated
+  };
+
+  // We need a wrapper to use useNavigate hook for callbacks
+  const ModDetailsWithNav = () => {
+    const navigate = useNavigate();
+    return (
+      <ModDetails 
+        {...modDetailsProps} 
+        onBack={() => navigate('/')}
+        onModClick={(m) => {
+            let prefix = 'mod';
+            if (m.type === 'Resource Pack') prefix = 'rp';
+            else if (m.type === 'Map') prefix = 'map';
+            else if (m.type === 'Modpack') prefix = 'modpack';
+            navigate(`/${prefix}/${m.shareCode || m.id}`);
+        }}
+        onPublisherClick={(pid) => navigate(`/profile/${pid}`)}
+      />
+    );
+  };
+
   const commonProps = {
     currentUser,
     mods,
@@ -192,7 +174,7 @@ export default function App() {
     isRefreshing,
     initializeData,
     trackUserInterest,
-    isRTL: true, // Default to RTL for Arabic
+    isRTL: true,
     isAdminAuthenticated,
     setIsAdminAuthenticated,
     setShowAdminModal,
@@ -200,17 +182,22 @@ export default function App() {
     editingItem,
     setEditingItem,
     db,
-    onLoadMoreMods: () => {}, // Implement pagination if needed
+    onLoadMoreMods: () => {},
     hasMoreMods,
-    isLoadingMoreMods,
-    externalMod: selectedMod
+    isLoadingMoreMods
   };
 
   return (
-    <PageRenderer 
-      {...commonProps} 
-      activePage={currentView} 
-      onNavigate={handleNavigate} 
-    />
+    <Router>
+      <Routes>
+        <Route path="/mod/:code" element={<ModDetailsWithNav />} />
+        <Route path="/map/:code" element={<ModDetailsWithNav />} />
+        <Route path="/rp/:code" element={<ModDetailsWithNav />} />
+        <Route path="/modpack/:code" element={<ModDetailsWithNav />} />
+        
+        <Route path="/:pageId" element={<PageWrapper {...commonProps} />} />
+        <Route path="/" element={<Navigate to="/home" replace />} />
+      </Routes>
+    </Router>
   );
 }
