@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useLocation, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { firestore } from '../db';
 import { ArrowRight, Download, ShieldCheck, Loader2, CheckCircle, Edit, MessageSquare, Send, User as UserIcon, Flag, Star, Clock, X, Info, Sparkles, LayoutGrid, Copy, Share2, Trash2, Youtube, ThumbsUp, ThumbsDown, Calendar, FileText, Database, Layers, AlertTriangle, Play, Eye, Zap, Tag, Monitor, HardDrive, UserPlus, UserMinus, Hash, ImageIcon, Lock, CheckCircle2, TrendingUp, Ghost } from 'lucide-react';
@@ -22,14 +22,14 @@ interface ModDetailsProps {
   onFollow: () => void;
   isOnline: boolean;
   isAdmin?: boolean;
+  expectedType?: string;
 }
 
 const OWNER_EMAIL = 'overmods1@gmail.com';
 
-const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentUser, onDownload, onEdit, onDelete, onBack, onModClick, onPublisherClick, isFollowing: initialIsFollowing, onFollow, isOnline, isAdmin }) => {
+const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentUser, onDownload, onEdit, onDelete, onBack, onModClick, onPublisherClick, isFollowing: initialIsFollowing, onFollow, isOnline, isAdmin, expectedType }) => {
   const { t, isRTL } = useTranslation();
   const { code } = useParams();
-  const location = useLocation();
   const navigate = useNavigate();
 
   const [mod, setMod] = useState<Mod | null>(propMod || null);
@@ -98,13 +98,6 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentU
       setIsLoading(true);
       setNotFound(false);
       try {
-        // Determine expected type from path
-        let expectedType = '';
-        if (location.pathname.startsWith('/mod/')) expectedType = 'Mod';
-        else if (location.pathname.startsWith('/rp/')) expectedType = 'Resource Pack';
-        else if (location.pathname.startsWith('/map/')) expectedType = 'Map';
-        else if (location.pathname.startsWith('/modpack/')) expectedType = 'Modpack';
-
         // Query by shareCode (NOT by id)
         const q = query(collection(firestore, 'mods'), where('shareCode', '==', code), limit(1));
         const snap = await getDocs(q);
@@ -132,7 +125,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentU
     };
 
     fetchMod();
-  }, [code, propMod, location.pathname]);
+  }, [code, propMod, expectedType]);
 
   useEffect(() => {
     if (!mod) return;

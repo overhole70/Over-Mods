@@ -25,10 +25,27 @@ const PageWrapper = (props: any) => {
   );
 };
 
-// Aliases for ModDetails to satisfy the requirement of having distinct components/routes
-const MapDetails = (props: any) => <ModDetails {...props} />;
-const ResourcePackDetails = (props: any) => <ModDetails {...props} />;
-const ModpackDetails = (props: any) => <ModDetails {...props} />;
+// Wrapper for ModDetails to handle navigation and props
+const ModDetailsWrapper = (props: any) => {
+  const navigate = useNavigate();
+  
+  const handleModClick = (m: Mod) => {
+      let prefix = 'mod';
+      if (m.type === 'Resource Pack') prefix = 'rp';
+      else if (m.type === 'Map') prefix = 'map';
+      else if (m.type === 'Modpack') prefix = 'modpack';
+      navigate(`/${prefix}/${m.shareCode || m.id}`);
+  };
+
+  return (
+    <ModDetails 
+      {...props} 
+      onBack={() => navigate('/')}
+      onModClick={handleModClick}
+      onPublisherClick={(pid: string) => navigate(`/profile/${pid}`)}
+    />
+  );
+};
 
 export default function App() {
   const [metadata, setMetadata] = useState<AppMetadata | null>(null);
@@ -129,38 +146,16 @@ export default function App() {
   }
 
   // Common props for ModDetails
-  const modDetailsProps = {
+  const modDetailsDataProps = {
     allMods: mods,
     currentUser,
     onDownload: () => {},
     onEdit: () => {},
     onDelete: () => {},
-    onBack: () => window.location.href = '/', // Simple redirect for now, or use a wrapper with useNavigate
-    onModClick: (m: Mod) => window.location.href = `/${m.type === 'Mod' ? 'mod' : m.type === 'Map' ? 'map' : m.type === 'Resource Pack' ? 'rp' : 'modpack'}/${m.shareCode || m.id}`,
-    onPublisherClick: (pid: string) => window.location.href = `/profile/${pid}`,
     isFollowing: false,
     onFollow: () => {},
     isOnline: true,
     isAdmin: isAdminAuthenticated
-  };
-
-  // We need a wrapper to use useNavigate hook for callbacks
-  const ModDetailsWithNav = () => {
-    const navigate = useNavigate();
-    return (
-      <ModDetails 
-        {...modDetailsProps} 
-        onBack={() => navigate('/')}
-        onModClick={(m) => {
-            let prefix = 'mod';
-            if (m.type === 'Resource Pack') prefix = 'rp';
-            else if (m.type === 'Map') prefix = 'map';
-            else if (m.type === 'Modpack') prefix = 'modpack';
-            navigate(`/${prefix}/${m.shareCode || m.id}`);
-        }}
-        onPublisherClick={(pid) => navigate(`/profile/${pid}`)}
-      />
-    );
   };
 
   const commonProps = {
@@ -190,10 +185,10 @@ export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/mod/:code" element={<ModDetailsWithNav />} />
-        <Route path="/map/:code" element={<ModDetailsWithNav />} />
-        <Route path="/rp/:code" element={<ModDetailsWithNav />} />
-        <Route path="/modpack/:code" element={<ModDetailsWithNav />} />
+        <Route path="/mod/:code" element={<ModDetailsWrapper {...modDetailsDataProps} expectedType="Mod" />} />
+        <Route path="/map/:code" element={<ModDetailsWrapper {...modDetailsDataProps} expectedType="Map" />} />
+        <Route path="/rp/:code" element={<ModDetailsWrapper {...modDetailsDataProps} expectedType="Resource Pack" />} />
+        <Route path="/modpack/:code" element={<ModDetailsWrapper {...modDetailsDataProps} expectedType="Modpack" />} />
         
         <Route path="/:pageId" element={<PageWrapper {...commonProps} />} />
         <Route path="/" element={<Navigate to="/home" replace />} />
