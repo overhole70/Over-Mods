@@ -366,7 +366,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'download') {
-    return <DownloadPage />;
+    return <DownloadPage currentUser={currentUser} />;
   }
 
   // --- DYNAMIC RENDER ---
