@@ -1,27 +1,40 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
 const AdCard: React.FC = () => {
+  const adRef = useRef<HTMLDivElement>(null);
 
-  // 🚫 الإعلان معطل بالكامل للاختبار
-  // لا يوجد أي سكربت يتم تحميله هنا
+  useEffect(() => {
+    if (!adRef.current) return;
+
+    // منع التكرار
+    if (adRef.current.querySelector('script')) return;
+
+    const script = document.createElement('script');
+    script.async = true;
+    script.dataset.zone = '10661370';
+    script.src = 'https://nap5k.com/tag.min.js';
+
+    adRef.current.appendChild(script);
+
+  }, []);
 
   return (
-    <div
-      className="bg-zinc-900/40 backdrop-blur-md border border-white/5 
-                 rounded-[2.5rem] overflow-hidden flex flex-col 
-                 items-center justify-center min-h-[300px] 
-                 relative transition-all duration-500"
-    >
+    <div className="bg-zinc-900/40 backdrop-blur-md border border-white/5 
+                    rounded-[2.5rem] overflow-hidden 
+                    flex items-center justify-center 
+                    min-h-[280px] relative">
+
       <div className="absolute top-3 right-3 bg-black/60 px-2 py-1 
                       rounded-md text-[9px] text-zinc-400 
                       font-black uppercase tracking-widest 
-                      border border-white/5 z-10">
-        AD (DISABLED)
+                      border border-white/5">
+        AD
       </div>
 
-      <div className="text-zinc-600 text-sm font-bold">
-        Advertisement Disabled For Testing
-      </div>
+      <div
+        ref={adRef}
+        className="w-full h-full flex items-center justify-center"
+      />
     </div>
   );
 };
