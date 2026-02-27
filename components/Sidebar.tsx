@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Home, Server, Box, Download, BarChart3, Settings, LogOut, X, ShieldAlert, Sparkles, AlertTriangle, Users, Newspaper, Wallet } from 'lucide-react';
+import { Home, Server, Box, Download, BarChart3, Settings, LogOut, X, ShieldAlert, Sparkles, AlertTriangle, Users, Newspaper, Wallet, TrendingUp } from 'lucide-react';
 import { View, User } from '../types';
 import { useTranslation } from '../LanguageContext';
 
@@ -39,6 +39,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentView, onViewC
 
   if (!isApp) {
     menuItems.splice(6, 0, { id: 'download', label: 'تحميل التطبيق', icon: <Download size={22} />, desc: 'نسخة الأندرويد الرسمية' });
+  }
+
+  // Add Ad Revenue item for Admin
+  if (currentUser?.email === 'overmods1@gmail.com') {
+    menuItems.push({ 
+      id: 'ad-stats', 
+      label: 'Ad Revenue', 
+      icon: <TrendingUp size={22} />, 
+      desc: 'Adsterra Statistics' 
+    });
   }
 
   return (

@@ -26,6 +26,7 @@ import StatsDashboard from './StatsDashboard';
 import QuestionsView from './QuestionsView';
 import CompleteProfileView from './CompleteProfileView';
 import DownloadPage from './DownloadPage';
+import AdStatsView from './AdStatsView';
 
 interface PageRendererProps {
   activePage: string;
@@ -68,7 +69,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
     const staticPages = [
       'home', 'settings', 'profile', 'servers', 'news', 'upload',
       'join-creators', 'notifications', 'downloads', 'friends',
-      'earnings', 'contests', 'edit-profile', 'admin', 'stats', 'login', 'questions', 'complete-profile', 'download'
+      'earnings', 'contests', 'edit-profile', 'admin', 'stats', 'login', 'questions', 'complete-profile', 'download', 'ad-stats'
     ];
     return staticPages.includes(id.toLowerCase());
   };
@@ -363,6 +364,10 @@ const PageRenderer: React.FC<PageRendererProps> = ({
 
   if (normalizedPageId === 'download') {
     return <DownloadPage currentUser={currentUser} />;
+  }
+
+  if (normalizedPageId === 'ad-stats') {
+    return <AdStatsView currentUser={currentUser} />;
   }
 
   // --- DYNAMIC RENDER ---

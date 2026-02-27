@@ -336,4 +336,4 @@ export interface Contest {
   createdAt: string;
 }
 
-export type View = 'home' | 'servers' | 'upload' | 'profile' | 'stats' | 'details' | 'login' | 'downloads' | 'settings' | 'edit-profile' | 'admin' | 'notifications' | 'friends' | 'join-creators' | 'news' | 'earnings' | 'contests' | 'questions' | 'download';
+export type View = 'home' | 'servers' | 'upload' | 'profile' | 'stats' | 'details' | 'login' | 'downloads' | 'settings' | 'edit-profile' | 'admin' | 'notifications' | 'friends' | 'join-creators' | 'news' | 'earnings' | 'contests' | 'questions' | 'download' | 'ad-stats' | 'complete-profile';
