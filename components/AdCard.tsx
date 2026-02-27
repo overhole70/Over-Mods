@@ -1,57 +1,45 @@
 import React, { useEffect, useRef } from 'react';
 
 const AdCard: React.FC = () => {
-  const adRef = useRef<HTMLDivElement>(null);
-  const scriptLoaded = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!adRef.current) return;
-    if (scriptLoaded.current) return;
+    if (!containerRef.current) return;
 
     const script = document.createElement('script');
-    script.src = "https://pl28807799.effectivegatecpm.com/5abcb578c2999656ffa1d5f947d53422/invoke.js";
     script.async = true;
-    script.setAttribute("data-cfasync", "false");
+    script.setAttribute('data-cfasync', 'false');
+    script.src =
+      'https://pl28807799.effectivegatecpm.com/5abcb578c2999656ffa1d5f947d53422/invoke.js';
 
-    adRef.current.appendChild(script);
-    scriptLoaded.current = true;
-
-    return () => {
-      if (adRef.current) {
-        adRef.current.innerHTML = "";
-      }
-    };
+    containerRef.current.innerHTML = '';
+    containerRef.current.appendChild(script);
   }, []);
 
   return (
-    <div className="relative bg-gradient-to-br from-zinc-900/80 to-zinc-950 
-                    border border-yellow-500/30 
-                    rounded-[2.5rem] overflow-hidden 
-                    flex flex-col justify-between 
-                    min-h-[320px] 
-                    shadow-lg hover:shadow-yellow-500/10 
-                    transition-all duration-300">
-
-      {/* شارة إعلان واضحة */}
-      <div className="absolute top-3 right-3 
-                      bg-yellow-500 text-black 
-                      text-[10px] px-3 py-1 
-                      rounded-lg font-black uppercase tracking-widest">
-        إعلان
+    <div
+      className="
+        relative
+        bg-zinc-900/40
+        border border-white/5
+        rounded-[2.5rem]
+        overflow-hidden
+        w-full
+        max-w-[380px]
+        h-[320px]
+        flex items-center justify-center
+      "
+    >
+      {/* علامة إعلان واضحة */}
+      <div className="absolute top-3 right-3 bg-black/70 px-3 py-1 rounded-md text-[10px] text-zinc-400 font-black uppercase tracking-widest z-10">
+        Sponsored
       </div>
 
-      {/* محتوى الإعلان */}
+      {/* الكونتينر الفعلي للإعلان */}
       <div
-        id="container-5abcb578c2999656ffa1d5f947d53422"
-        ref={adRef}
-        className="w-full h-full flex items-center justify-center p-4"
+        ref={containerRef}
+        className="w-full h-full overflow-hidden"
       />
-
-      {/* تذييل بسيط لتمييزه أكثر */}
-      <div className="text-center text-[11px] text-yellow-400 
-                      font-bold py-3 border-t border-yellow-500/20 bg-black/30">
-        Sponsored Content
-      </div>
     </div>
   );
 };
