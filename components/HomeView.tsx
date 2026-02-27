@@ -148,7 +148,6 @@ const HomeView: React.FC<HomeViewProps> = ({
               />
             ];
             
-            // Insert AdCard ONLY after the 3rd item (index 2)
             if (index === 2) {
               elements.push(<AdCard key="single-ad-banner" />);
             }

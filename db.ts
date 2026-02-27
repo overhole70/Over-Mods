@@ -1324,34 +1324,6 @@ export class PlatformDB {
       tx.update(publisherRef, { 'wallet.earned': increment(earnings) });
     });
   }
-
-  async getAdConfig() {
-    try {
-      console.log("Fetching ad config from settings/ads_settings...");
-      const snap = await getDoc(doc(firestore, 'settings', 'ads_settings'));
-      if (snap.exists()) {
-        console.log("Ad config found:", snap.data());
-        return snap.data();
-      } else {
-        console.log("No ad config found, returning empty object.");
-        return {};
-      }
-    } catch (e) {
-      console.error("Error fetching ad config:", e);
-      return {};
-    }
-  }
-
-  async saveAdConfig(config: any) {
-    try {
-      console.log("Saving ad config to settings/ads_settings:", config);
-      await setDoc(doc(firestore, 'settings', 'ads_settings'), config, { merge: true });
-      console.log("Ad config saved successfully.");
-    } catch (e) {
-      console.error("Error saving ad config:", e);
-      throw e;
-    }
-  }
 }
 
 export const db = new PlatformDB();

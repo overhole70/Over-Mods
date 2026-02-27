@@ -2,10 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, Complaint, ModReport, AdminPermissions, Notification, NewsItem, StaffMessage, ChatMessage, PopupWindowConfig, PopupButton, PopupSize } from '../types';
 import { db, firestore } from '../db';
 import { collection, query, onSnapshot } from 'firebase/firestore';
-import AdScriptManager from './AdScriptManager';
 import { 
   Users, Flag, Bell, ShieldAlert, Ban, Unlock, 
-  CheckCircle, XCircle, Search, UserPlus, Trash2, Send, Loader2, Camera, CheckCircle2, ShieldCheck, Youtube, ExternalLink, Settings, AlertTriangle, Save, Plus, Info, Calendar, Mail, UserCircle, Hash, Layout, User as UserIcon, MessageSquare, ChevronDown, Monitor, Sparkles, FileCheck, Shield, HeartHandshake, Newspaper, Edit3, UserMinus, Image as ImageIcon, X, Copy, Check, Eye, Ghost, History, Inbox, Clock, Trophy, RefreshCw, LayoutPanelLeft, Megaphone
+  CheckCircle, XCircle, Search, UserPlus, Trash2, Send, Loader2, Camera, CheckCircle2, ShieldCheck, Youtube, ExternalLink, Settings, AlertTriangle, Save, Plus, Info, Calendar, Mail, UserCircle, Hash, Layout, User as UserIcon, MessageSquare, ChevronDown, Monitor, Sparkles, FileCheck, Shield, HeartHandshake, Newspaper, Edit3, UserMinus, Image as ImageIcon, X, Copy, Check, Eye, Ghost, History, Inbox, Clock, Trophy, RefreshCw, LayoutPanelLeft
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -40,8 +39,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
     { id: 'staff_chat', label: 'العمليات', icon: <MessageSquare size={16} />, permission: null },
     { id: 'helpers', label: 'المساعدين', icon: <Shield size={16} />, permission: 'ownerOnly' },
     { id: 'notifications', label: 'البث الإداري', icon: <Bell size={16} />, permission: 'canSendNotifications' },
-    { id: 'popups', label: 'نوافذ النظام', icon: <LayoutPanelLeft size={16} />, permission: 'ownerOnly' },
-    { id: 'ads', label: 'الإعلانات', icon: <Megaphone size={16} />, permission: 'ownerOnly' }
+    { id: 'popups', label: 'نوافذ النظام', icon: <LayoutPanelLeft size={16} />, permission: 'ownerOnly' }
   ];
 
   const isTabPermitted = (tabId: string) => {
@@ -365,11 +363,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
       </div>
 
       <div className="space-y-12">
-         {/* Ads Manager Section */}
-         {activeTab === 'ads' && isTabPermitted('ads') && (
-           <AdScriptManager />
-         )}
-
          {/* Members Section */}
          {activeTab === 'users' && isTabPermitted('users') && (
            <div className="space-y-6">
