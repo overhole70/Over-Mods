@@ -2,12 +2,12 @@ import React, { useEffect, useRef } from 'react';
 
 const AdCard: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const refreshInterval = 10000; // 10 ثواني
+  const refreshInterval = 60000; // 60 ثانية
 
   const loadAd = () => {
     if (!containerRef.current) return;
 
-    // تنظيف المحتوى السابق
+    // تنظيف الإعلان السابق
     containerRef.current.innerHTML = "";
 
     const scriptConfig = document.createElement("script");
@@ -35,7 +35,7 @@ const AdCard: React.FC = () => {
     loadAd(); // أول تحميل
 
     const interval = setInterval(() => {
-      loadAd(); // إعادة تحميل كل 10 ثواني
+      loadAd(); // إعادة تحميل كل دقيقة
     }, refreshInterval);
 
     return () => clearInterval(interval);
@@ -44,7 +44,6 @@ const AdCard: React.FC = () => {
   return (
     <div className="w-full flex justify-center my-6">
       <div className="relative bg-zinc-900/40 border border-white/5 rounded-2xl p-4">
-
         <div className="absolute top-2 right-2 text-[10px] bg-black/70 px-2 py-1 rounded text-zinc-400">
           إعلان
         </div>
