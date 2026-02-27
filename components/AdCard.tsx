@@ -6,12 +6,11 @@ const AdCard: React.FC = () => {
   useEffect(() => {
     if (!adRef.current) return;
 
-    // منع تكرار تحميل الإعلان
+    // منع إعادة تحميل الإعلان
     if (adRef.current.innerHTML !== '') return;
 
-    // سكربت الإعدادات
-    const optionsScript = document.createElement('script');
-    optionsScript.innerHTML = `
+    const script1 = document.createElement('script');
+    script1.innerHTML = `
       atOptions = {
         'key' : 'abe8878265d343329914593501516933',
         'format' : 'iframe',
@@ -21,28 +20,28 @@ const AdCard: React.FC = () => {
       };
     `;
 
-    // سكربت الاستدعاء
-    const invokeScript = document.createElement('script');
-    invokeScript.src = 'https://www.highperformanceformat.com/abe8878265d343329914593501516933/invoke.js';
-    invokeScript.async = true;
+    const script2 = document.createElement('script');
+    script2.src = 'https://www.highperformanceformat.com/abe8878265d343329914593501516933/invoke.js';
+    script2.async = true;
 
-    adRef.current.appendChild(optionsScript);
-    adRef.current.appendChild(invokeScript);
-
+    adRef.current.appendChild(script1);
+    adRef.current.appendChild(script2);
   }, []);
 
   return (
-    <div className="relative bg-zinc-900/40 border border-yellow-500/30 
-                    rounded-2xl overflow-hidden flex items-center 
-                    justify-center min-h-[250px] p-4">
+    <div className="w-full flex justify-center my-6">
+      <div className="relative bg-zinc-900/40 border border-white/5 rounded-2xl p-4">
 
-      {/* شارة إعلان واضحة */}
-      <div className="absolute top-2 right-2 bg-yellow-500 text-black 
-                      text-[10px] font-bold px-2 py-1 rounded-md z-10">
-        إعلان
+        {/* شارة إعلان */}
+        <div className="absolute top-2 right-2 text-[10px] bg-black/60 px-2 py-1 rounded text-zinc-400">
+          إعلان
+        </div>
+
+        <div
+          ref={adRef}
+          style={{ width: 300, height: 250 }}
+        />
       </div>
-
-      <div ref={adRef} className="w-[300px] h-[250px]" />
     </div>
   );
 };
