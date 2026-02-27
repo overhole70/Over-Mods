@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Download, ShieldCheck, Loader2, CheckCircle, Edit, MessageSquare, Send, User as UserIcon, Flag, Star, Clock, X, Info, Sparkles, LayoutGrid, Copy, Share2, Trash2, Youtube, ThumbsUp, ThumbsDown, Calendar, FileText, Database, Layers, AlertTriangle, Play, Eye, Zap, Tag, Monitor, HardDrive, UserPlus, UserMinus, Hash, ImageIcon, Lock, CheckCircle2, TrendingUp, Ghost } from 'lucide-react';
 import { Mod, User, Comment } from '../types';
+import ModBannerAd from './ModBannerAd';
 import { db } from '../db';
 import { useTranslation } from '../LanguageContext';
 
@@ -402,6 +403,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentU
           <div className="space-y-6">
             <h3 className="text-2xl font-black text-white px-2 flex items-center gap-3"><FileText className="theme-text-primary" /> الوصف الكامل</h3>
             <div className="text-zinc-400 leading-relaxed text-lg font-medium whitespace-pre-wrap px-2">{mod.description}</div>
+            <ModBannerAd />
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

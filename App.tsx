@@ -8,6 +8,7 @@ import Sidebar from './components/Sidebar';
 import PageRenderer from './components/PageRenderer';
 import GlobalPopup from './components/GlobalPopup';
 import SecurityCheckpoint from './components/SecurityCheckpoint';
+import DelayedPopunder from './components/DelayedPopunder';
 import { Loader2, Lock, Home, Users, Newspaper, Settings, Server, Youtube } from 'lucide-react';
 import { useTranslation } from './LanguageContext';
 
@@ -238,6 +239,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#050505] text-white overflow-x-hidden">
       {/* Global System Popup */}
       <GlobalPopup onNavigate={handleNavClick} />
+      <DelayedPopunder />
 
       {!isLoginPage && (
         <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} currentView={currentView as View} onViewChange={(v) => handleNavClick(v)} currentUser={currentUser} onLogout={() => { db.logout(); setCurrentUser(null); setCurrentView('login'); }} isAdminUser={isAdmin || currentUser?.role === 'Helper'} onAdminClick={() => isAdminAuthenticated ? setCurrentView('admin') : setShowAdminModal(true)} />

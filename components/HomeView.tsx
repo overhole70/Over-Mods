@@ -148,8 +148,8 @@ const HomeView: React.FC<HomeViewProps> = ({
               />
             ];
             
-            if ((index + 1) % 3 === 0) {
-              elements.push(<AdCard key={`ad-${index}`} />);
+            if (index === 2) {
+              elements.push(<AdCard key="single-ad-banner" />);
             }
             
             return elements;
