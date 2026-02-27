@@ -49,11 +49,6 @@ export default function App() {
   const [preloadedReports, setPreloadedReports] = useState<any[]>([]);
   const [preloadedComplaints, setPreloadedComplaints] = useState<any[]>([]);
   
-  // Pagination State
-  const [lastModDoc, setLastModDoc] = useState<any>(null);
-  const [hasMoreMods, setHasMoreMods] = useState(true);
-  const [isLoadingMoreMods, setIsLoadingMoreMods] = useState(false);
-
   const trackUserInterest = (category: string) => {
     if (!category) return;
     const stored = localStorage.getItem('user_interests');
@@ -171,14 +166,12 @@ export default function App() {
     try {
       // 1. Initial Light Load (Home Page Data Only)
       const [modsData, s, n] = await Promise.all([
-        db.getModsPaginated(10), // Fetch only first 10 mods
+        db.getAll('mods'),
         db.getAll('servers', 10), // Limit servers
         db.getAll('news', 1)
       ]);
 
-      setMods(modsData.mods);
-      setLastModDoc(modsData.lastDoc);
-      setHasMoreMods(!!modsData.lastDoc);
+      setMods(modsData as Mod[]);
       
       setServers(s as MinecraftServer[] || []);
       if (n && n.length > 0) setNewsSnippet(n[0] as NewsItem);
@@ -190,21 +183,6 @@ export default function App() {
     } finally {
       setIsRefreshing(false);
       initialLoadDone.current = true;
-    }
-  };
-
-  const loadMoreMods = async () => {
-    if (isLoadingMoreMods || !hasMoreMods || !lastModDoc) return;
-    setIsLoadingMoreMods(true);
-    try {
-      const nextBatch = await db.getModsPaginated(10, lastModDoc);
-      setMods(prev => [...prev, ...nextBatch.mods]);
-      setLastModDoc(nextBatch.lastDoc);
-      setHasMoreMods(!!nextBatch.lastDoc);
-    } catch (e) {
-      console.error("Load more failed", e);
-    } finally {
-      setIsLoadingMoreMods(false);
     }
   };
 
@@ -307,9 +285,6 @@ export default function App() {
               editingItem={editingItem}
               setEditingItem={setEditingItem}
               db={db}
-              onLoadMoreMods={loadMoreMods}
-              hasMoreMods={hasMoreMods}
-              isLoadingMoreMods={isLoadingMoreMods}
             />
           </div>
         </main>

@@ -266,8 +266,11 @@ export class PlatformDB {
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as Mod));
   }
 
-  async getAllUsers(limitCount: number = 100, lastDoc?: QueryDocumentSnapshot) {
-    let q = query(collection(firestore, 'users'), orderBy('createdAt', 'desc'), limit(limitCount));
+  async getAllUsers(limitCount?: number, lastDoc?: QueryDocumentSnapshot) {
+    let q = query(collection(firestore, 'users'), orderBy('createdAt', 'desc'));
+    if (limitCount && limitCount > 0) {
+      q = query(q, limit(limitCount));
+    }
     if (lastDoc) {
       q = query(q, startAfter(lastDoc));
     }
@@ -295,8 +298,7 @@ export class PlatformDB {
         collection(firestore, 'users'),
         orderBy('username'),
         where('username', '>=', cleanTerm),
-        where('username', '<=', cleanTerm + '\uf8ff'),
-        limit(50)
+        where('username', '<=', cleanTerm + '\uf8ff')
       );
       
       // 2. Numeric ID Exact Match (if term is numeric)

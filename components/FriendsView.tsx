@@ -17,6 +17,7 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
   const [isSearching, setIsSearching] = useState(false);
   
   const [recentChatPartners, setRecentChatPartners] = useState<User[]>([]);
+  const [chatPartnerIds, setChatPartnerIds] = useState<string[]>([]);
   const [blockedUsers, setBlockedUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showOptionsPopup, setShowOptionsPopup] = useState(false);
@@ -52,7 +53,30 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
   useEffect(() => {
     db.getFriends(currentUser.id).then(setMyFriends);
     if (activeTab === 'blocked') loadBlockedUsers();
-  }, [activeTab]);
+  }, [activeTab, currentUser.blockedUsers]);
+
+  // Fetch Chat Users (Friends + Recent)
+  useEffect(() => {
+    if (activeTab !== 'chat') return;
+    
+    const fetchUsers = async () => {
+      setIsLoading(true);
+      const allIds = Array.from(new Set([...chatPartnerIds, ...myFriends]));
+      const visibleIds = allIds.filter(id => !currentUser.hiddenChats?.includes(id));
+      
+      if (visibleIds.length === 0) {
+         setRecentChatPartners([]);
+         setIsLoading(false);
+         return;
+      }
+
+      const users = await Promise.all(visibleIds.map(id => db.get('users', id) as Promise<User>));
+      setRecentChatPartners(users.filter(u => !!u && !currentUser.blockedUsers?.includes(u.id)));
+      setIsLoading(false);
+    };
+    
+    fetchUsers();
+  }, [activeTab, chatPartnerIds, myFriends, currentUser.hiddenChats, currentUser.blockedUsers]);
 
   // Real-time listeners
   useEffect(() => {
@@ -64,16 +88,10 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
     // Chat Listeners
     if (activeTab === 'chat') {
       setIsLoading(true);
-      unsubChat = db.subscribeToRecentChats(currentUser.id, async (partnerIds) => {
-        const friendIds = await db.getFriends(currentUser.id);
-        setMyFriends(friendIds); // Update friends list on chat update as well
-        
-        const allIds = Array.from(new Set([...partnerIds, ...friendIds]));
-        const visibleIds = allIds.filter(id => !currentUser.hiddenChats?.includes(id));
-        
-        const users = await Promise.all(visibleIds.map(id => db.get('users', id) as Promise<User>));
-        setRecentChatPartners(users.filter(u => !!u && !currentUser.blockedUsers?.includes(u.id)));
-        setIsLoading(false);
+      unsubChat = db.subscribeToRecentChats(currentUser.id, (partnerIds) => {
+        setChatPartnerIds(partnerIds);
+        // Also refresh friends list to ensure sync
+        db.getFriends(currentUser.id).then(setMyFriends);
       });
     }
 

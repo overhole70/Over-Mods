@@ -17,16 +17,12 @@ interface HomeViewProps {
   onNavigate: (path: string) => void;
   isRTL: boolean;
   trackUserInterest: (category: string) => void;
-  onLoadMoreMods?: () => void;
-  hasMoreMods?: boolean;
-  isLoadingMoreMods?: boolean;
 }
 
 type SortType = 'newest' | 'most_viewed' | 'highest_rated' | 'recommended';
 
 const HomeView: React.FC<HomeViewProps> = ({ 
-  mods, currentUser, searchTerm, setSearchTerm, isRefreshing, onRefresh, onModClick, onNavigate, isRTL, trackUserInterest,
-  onLoadMoreMods, hasMoreMods, isLoadingMoreMods
+  mods, currentUser, searchTerm, setSearchTerm, isRefreshing, onRefresh, onModClick, onNavigate, isRTL, trackUserInterest
 }) => {
   const [filterType, setFilterType] = useState<ModType | 'All'>('All');
   const [filterCategory, setFilterCategory] = useState<string>('All');
@@ -150,19 +146,6 @@ const HomeView: React.FC<HomeViewProps> = ({
             />
           ))}
         </div>
-
-        {onLoadMoreMods && hasMoreMods && !searchTerm && (
-          <div className="flex justify-center pt-8 pb-12">
-            <button 
-              onClick={onLoadMoreMods}
-              disabled={isLoadingMoreMods}
-              className="px-8 py-4 bg-zinc-900 border border-white/5 rounded-2xl text-zinc-500 font-black text-xs hover:text-white hover:border-white/20 transition-all flex items-center gap-3 disabled:opacity-50"
-            >
-              {isLoadingMoreMods ? <RotateCw size={16} className="animate-spin" /> : <ArrowDownNarrowWide size={16} />}
-              {isLoadingMoreMods ? 'جاري التحميل...' : 'عرض المزيد'}
-            </button>
-          </div>
-        )}
         
         {processedMods.length === 0 && !isRefreshing && (
           <div className="py-40 text-center border-2 border-dashed border-zinc-900 rounded-[4rem] text-zinc-700 font-black animate-in fade-in">

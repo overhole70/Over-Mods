@@ -48,9 +48,6 @@ interface PageRendererProps {
   editingItem: Mod | MinecraftServer | null;
   setEditingItem: (item: Mod | MinecraftServer | null) => void;
   db: any;
-  onLoadMoreMods?: () => void;
-  hasMoreMods?: boolean;
-  isLoadingMoreMods?: boolean;
 }
 
 const PageRenderer: React.FC<PageRendererProps> = ({
@@ -58,8 +55,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   currentUser, mods, servers, newsSnippet, userDownloads,
   searchTerm, setSearchTerm, isRefreshing, initializeData, trackUserInterest,
   isRTL, isAdminAuthenticated, setIsAdminAuthenticated, setShowAdminModal, setCurrentUser,
-  editingItem, setEditingItem, db,
-  onLoadMoreMods, hasMoreMods, isLoadingMoreMods
+  editingItem, setEditingItem, db
 }) => {
   
   const [fetchedUser, setFetchedUser] = useState<User | null>(null);

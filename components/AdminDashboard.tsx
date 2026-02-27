@@ -60,9 +60,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
   });
 
   const [users, setUsers] = useState<User[]>([]);
-  const [lastUserDoc, setLastUserDoc] = useState<any>(null);
-  const [hasMoreUsers, setHasMoreUsers] = useState(true);
-  const [isLoadingMoreUsers, setIsLoadingMoreUsers] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
   const [reports, setReports] = useState<ModReport[]>([]);
@@ -178,7 +175,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
 
   const handleSearch = async (term: string) => {
     setIsSearching(true);
-    setHasMoreUsers(false); // Disable load more during search
     try {
       const results = await db.searchUsers(term);
       setUsers(results);
@@ -204,7 +200,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
     setIsLoading(true);
     try {
       const [uData, r, req, comp, n, site, popup] = await Promise.all([
-        db.getAllUsers(100).catch(e => { console.warn("Users load failed", e); return { users: [], lastDoc: null }; }),
+        db.getAllUsers().catch(e => { console.warn("Users load failed", e); return { users: [], lastDoc: null }; }),
         db.getAll('reports').catch(e => { console.warn("Reports load failed", e); return []; }),
         db.getPendingVerifications().catch(e => { console.warn("Verifications load failed", e); return []; }),
         db.getAll('complaints').catch(e => { console.warn("Complaints load failed", e); return []; }),
@@ -215,8 +211,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
       
       if (uData && uData.users) {
          setUsers(uData.users);
-         setLastUserDoc(uData.lastDoc);
-         setHasMoreUsers(!!uData.lastDoc);
          setIsSearching(false);
       }
       if (r) setReports(r as ModReport[]);
@@ -230,20 +224,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
     } finally { setIsLoading(false); }
   };
 
-  const loadMoreUsers = async () => {
-    if (isLoadingMoreUsers || !hasMoreUsers || !lastUserDoc || isSearching) return;
-    setIsLoadingMoreUsers(true);
-    try {
-      const nextBatch = await db.getAllUsers(100, lastUserDoc);
-      setUsers(prev => [...prev, ...nextBatch.users]);
-      setLastUserDoc(nextBatch.lastDoc);
-      setHasMoreUsers(!!nextBatch.lastDoc);
-    } catch (e) {
-      console.error("Load more users failed", e);
-    } finally {
-      setIsLoadingMoreUsers(false);
-    }
-  };
+
 
   const loadStaffMessages = async () => { 
     try { 
