@@ -9,11 +9,11 @@ const AdCard: React.FC = () => {
     // امسح أي محتوى سابق
     containerRef.current.innerHTML = '';
 
-    // أنشئ السكربت بنفس طريقة الكود الأصلي
+    // إنشاء السكربت بنفس الصيغة الأصلية
     const script = document.createElement('script');
     script.innerHTML = `
       (function(s){
-        s.dataset.zone='10661298',
+        s.dataset.zone='10661327',
         s.src='https://nap5k.com/tag.min.js'
       })([document.documentElement, document.body]
         .filter(Boolean)
