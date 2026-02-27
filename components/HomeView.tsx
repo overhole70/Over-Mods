@@ -3,6 +3,7 @@ import { Mod, User, ModType } from '../types';
 import { MOD_TYPES, CATEGORIES } from './constants';
 import { Search, RotateCw, SlidersHorizontal, ArrowDownNarrowWide, Clock, TrendingUp, Star, LayoutGrid, Filter, Ghost, Zap } from 'lucide-react';
 import ModCard from './ModCard';
+import AdCard from './AdCard';
 import { db } from '../db';
 import { useTranslation } from '../LanguageContext';
 
@@ -136,15 +137,23 @@ const HomeView: React.FC<HomeViewProps> = ({
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pt-6">
-          {processedMods.map(m => (
-            <ModCard 
-              key={m.id} 
-              mod={m} 
-              onClick={() => onModClick(m)} 
-              isFollowing={currentUser?.following?.includes(m.publisherId) || false} 
-              onFollow={(e) => { e.stopPropagation(); db.followUser(currentUser!.id, m.publisherId); }} 
-            />
-          ))}
+          {processedMods.flatMap((m, index) => {
+            const elements = [
+              <ModCard 
+                key={m.id} 
+                mod={m} 
+                onClick={() => onModClick(m)} 
+                isFollowing={currentUser?.following?.includes(m.publisherId) || false} 
+                onFollow={(e) => { e.stopPropagation(); db.followUser(currentUser!.id, m.publisherId); }} 
+              />
+            ];
+            
+            if ((index + 1) % 3 === 0) {
+              elements.push(<AdCard key={`ad-${index}`} />);
+            }
+            
+            return elements;
+          })}
         </div>
         
         {processedMods.length === 0 && !isRefreshing && (
