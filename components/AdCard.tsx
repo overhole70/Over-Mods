@@ -1,45 +1,48 @@
 import React, { useEffect, useRef } from 'react';
 
 const AdCard: React.FC = () => {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const adRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!adRef.current) return;
 
-    const script = document.createElement('script');
-    script.async = true;
-    script.setAttribute('data-cfasync', 'false');
-    script.src =
-      'https://pl28807799.effectivegatecpm.com/5abcb578c2999656ffa1d5f947d53422/invoke.js';
+    // منع تكرار تحميل الإعلان
+    if (adRef.current.innerHTML !== '') return;
 
-    containerRef.current.innerHTML = '';
-    containerRef.current.appendChild(script);
+    // سكربت الإعدادات
+    const optionsScript = document.createElement('script');
+    optionsScript.innerHTML = `
+      atOptions = {
+        'key' : 'abe8878265d343329914593501516933',
+        'format' : 'iframe',
+        'height' : 250,
+        'width' : 300,
+        'params' : {}
+      };
+    `;
+
+    // سكربت الاستدعاء
+    const invokeScript = document.createElement('script');
+    invokeScript.src = 'https://www.highperformanceformat.com/abe8878265d343329914593501516933/invoke.js';
+    invokeScript.async = true;
+
+    adRef.current.appendChild(optionsScript);
+    adRef.current.appendChild(invokeScript);
+
   }, []);
 
   return (
-    <div
-      className="
-        relative
-        bg-zinc-900/40
-        border border-white/5
-        rounded-[2.5rem]
-        overflow-hidden
-        w-full
-        max-w-[380px]
-        h-[320px]
-        flex items-center justify-center
-      "
-    >
-      {/* علامة إعلان واضحة */}
-      <div className="absolute top-3 right-3 bg-black/70 px-3 py-1 rounded-md text-[10px] text-zinc-400 font-black uppercase tracking-widest z-10">
-        Sponsored
+    <div className="relative bg-zinc-900/40 border border-yellow-500/30 
+                    rounded-2xl overflow-hidden flex items-center 
+                    justify-center min-h-[250px] p-4">
+
+      {/* شارة إعلان واضحة */}
+      <div className="absolute top-2 right-2 bg-yellow-500 text-black 
+                      text-[10px] font-bold px-2 py-1 rounded-md z-10">
+        إعلان
       </div>
 
-      {/* الكونتينر الفعلي للإعلان */}
-      <div
-        ref={containerRef}
-        className="w-full h-full overflow-hidden"
-      />
+      <div ref={adRef} className="w-[300px] h-[250px]" />
     </div>
   );
 };
