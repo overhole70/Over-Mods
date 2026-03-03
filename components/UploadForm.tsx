@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Image as ImageIcon, Loader2, Link as LinkIcon, Hash, Server as ServerIcon, Globe, Zap, AlertTriangle, Cloud, CheckCircle2, Youtube, Package, Map as MapIcon, Box, FileText, CheckCircle, Clock, Tag, Monitor, HardDrive, Plus, Coins } from 'lucide-react';
+import { X, Image as ImageIcon, Loader2, Link as LinkIcon, Hash, Server as ServerIcon, Globe, Zap, AlertTriangle, Cloud, CheckCircle2, Youtube, Package, Map as MapIcon, Box, FileText, CheckCircle, Clock, Tag, Monitor, HardDrive, Plus, Coins, Compass, Cpu, Sparkles, Palette, Mountain, Swords } from 'lucide-react';
 import { ModType, Mod, MinecraftServer } from '../types';
 import { MOD_TYPES, CATEGORIES } from './constants';
 import { db } from '../db';
@@ -12,6 +12,16 @@ interface UploadFormProps {
   initialData?: Mod | MinecraftServer | null;
 }
 
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  'مغامرة': <Compass size={18} />,
+  'تقني': <Cpu size={18} />,
+  'سحر': <Sparkles size={18} />,
+  'زينة': <Palette size={18} />,
+  'تحسين الأداء': <Zap size={18} />,
+  'واقعي': <Mountain size={18} />,
+  'PvP': <Swords size={18} />,
+};
+
 const UploadForm: React.FC<UploadFormProps> = ({ onUpload, onCancel, onBack, initialData }) => {
   const isEditing = !!initialData;
   const [title, setTitle] = useState('');
@@ -19,7 +29,8 @@ const UploadForm: React.FC<UploadFormProps> = ({ onUpload, onCancel, onBack, ini
   const [type, setType] = useState<ModType>('Mod');
   
   // Mod Specific State
-  const [category, setCategory] = useState(CATEGORIES[0]);
+  const [category, setCategory] = useState('');
+  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [minecraftVersion, setMinecraftVersion] = useState('1.21');
   const [mainImage, setMainImage] = useState<string>('');
   const [downloadUrl, setDownloadUrl] = useState('');
@@ -52,7 +63,7 @@ const UploadForm: React.FC<UploadFormProps> = ({ onUpload, onCancel, onBack, ini
       } else {
         // It's a mod
         const m = initialData as Mod;
-        setCategory(m.category || CATEGORIES[0]);
+        setCategory(m.category || '');
         setMinecraftVersion(m.minecraftVersion || '1.21');
         setMainImage(m.mainImage || '');
         setDownloadUrl(m.downloadUrl || '');
@@ -121,6 +132,7 @@ const UploadForm: React.FC<UploadFormProps> = ({ onUpload, onCancel, onBack, ini
           version: minecraftVersion.trim(),
         };
       } else {
+        if (!category) { setIsUploading(false); return setError('يرجى اختيار تصنيف للمنشور'); }
         if (!minecraftVersion.trim()) { setIsUploading(false); return setError('إصدار اللعبة مطلوب'); }
         if (!downloadUrl.trim()) { setIsUploading(false); return setError('رابط التحميل مطلوب'); }
         if (!fileSize.trim()) { setIsUploading(false); return setError('حجم الملف مطلوب'); }
@@ -194,21 +206,52 @@ const UploadForm: React.FC<UploadFormProps> = ({ onUpload, onCancel, onBack, ini
            </div>
 
            {type !== 'Server' && (
-             <div className="space-y-2 animate-in slide-in-from-top-2">
+             <div className="space-y-2 animate-in slide-in-from-top-2 relative z-50">
                 <label className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mr-2">التصنيف</label>
                 <div className="relative">
-                  <select 
-                    value={category} 
-                    onChange={e => setCategory(e.target.value)}
-                    className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl py-5 px-6 text-white font-black text-sm outline-none focus:theme-border-primary-alpha appearance-none cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => setIsCategoryOpen(!isCategoryOpen)}
+                    className={`w-full bg-zinc-900/50 border ${isCategoryOpen ? 'theme-border-primary' : 'border-white/5'} rounded-2xl py-5 px-6 text-white font-black text-sm outline-none flex items-center justify-between transition-all hover:bg-zinc-900`}
                   >
-                    {CATEGORIES.map(cat => (
-                      <option key={cat} value={cat} className="bg-zinc-900 text-white">{cat}</option>
-                    ))}
-                  </select>
-                  <div className="absolute left-6 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
-                    <Hash size={18} />
-                  </div>
+                    <div className="flex items-center gap-3">
+                       {category && <span className="theme-text-primary">{CATEGORY_ICONS[category]}</span>}
+                       <span className={category ? 'text-white' : 'text-zinc-500'}>
+                         {category || 'اختر الفئة'}
+                       </span>
+                    </div>
+                    <Hash size={18} className={isCategoryOpen ? 'theme-text-primary' : 'text-zinc-500'} />
+                  </button>
+                  
+                  {isCategoryOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-[#0a0a0a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-[100]">
+                      <div className="max-h-60 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                        {CATEGORIES.map(cat => (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => {
+                              setCategory(cat);
+                              setIsCategoryOpen(false);
+                            }}
+                            className={`w-full text-right p-3 rounded-xl text-xs font-bold transition-all flex items-center justify-between group ${category === cat ? 'theme-bg-primary text-black' : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'}`}
+                          >
+                            <div className="flex items-center gap-3">
+                               <span className={category === cat ? 'text-black' : 'text-zinc-500 group-hover:text-white transition-colors'}>
+                                 {CATEGORY_ICONS[cat] || <Hash size={18} />}
+                               </span>
+                               {cat}
+                            </div>
+                            {category === cat && <CheckCircle2 size={14} />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {isCategoryOpen && (
+                    <div className="fixed inset-0 z-[90]" onClick={() => setIsCategoryOpen(false)}></div>
+                  )}
                 </div>
              </div>
            )}

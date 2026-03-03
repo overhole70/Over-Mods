@@ -49,6 +49,10 @@ interface PageRendererProps {
   editingItem: Mod | MinecraftServer | null;
   setEditingItem: (item: Mod | MinecraftServer | null) => void;
   db: any;
+  onLoadMoreMods: () => void;
+  hasMoreMods: boolean;
+  isLoadingMoreMods: boolean;
+  onRequireLogin: () => void;
 }
 
 const PageRenderer: React.FC<PageRendererProps> = ({
@@ -56,7 +60,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   currentUser, mods, servers, newsSnippet, userDownloads,
   searchTerm, setSearchTerm, isRefreshing, initializeData, trackUserInterest,
   isRTL, isAdminAuthenticated, setIsAdminAuthenticated, setShowAdminModal, setCurrentUser,
-  editingItem, setEditingItem, db
+  editingItem, setEditingItem, db, onRequireLogin
 }) => {
   
   const [fetchedUser, setFetchedUser] = useState<User | null>(null);
@@ -97,6 +101,19 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       setLoadingDynamic(false);
     }
   }, [activePage, isStatic]); 
+
+  // Check for restricted pages and trigger login modal if needed
+  useEffect(() => {
+    const restrictedPages = [
+      'settings', 'profile', 'upload', 'join-creators', 
+      'notifications', 'friends', 'contests', 'edit-profile', 
+      'stats', 'questions'
+    ];
+    
+    if (restrictedPages.includes(normalizedPageId) && !currentUser) {
+      onRequireLogin();
+    }
+  }, [normalizedPageId, currentUser, onRequireLogin]);
 
   const fetchUserByUsername = async (username: string) => {
     try {
@@ -201,10 +218,17 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       isAdmin={isAdminAuthenticated || currentUser?.role === 'Admin'} 
       onPublisherClick={(pid) => db.get('users', pid).then((u: any) => { if(u) onNavigate(`@${u.username}`); })} 
       isFollowing={currentUser?.following?.includes(selectedMod.publisherId) || false} 
-      onFollow={() => db.followUser(currentUser!.id, selectedMod.publisherId)} 
+      onFollow={() => {
+        if (!currentUser) { onRequireLogin(); return; }
+        db.followUser(currentUser.id, selectedMod.publisherId);
+      }} 
       onEdit={() => { setEditingItem(selectedMod); onNavigate('upload'); }} 
       onDelete={() => db.deleteMod(selectedMod.id).then(() => { initializeData(); setSelectedMod(null); })} 
-      onDownload={() => trackUserInterest(selectedMod.category)} 
+      onDownload={() => {
+        if (!currentUser) { onRequireLogin(); return; }
+        trackUserInterest(selectedMod.category);
+      }} 
+      onRequireLogin={onRequireLogin}
     />;
   }
 
@@ -220,18 +244,27 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       onNavigate={(path) => onNavigate(path)} 
       isRTL={isRTL} 
       trackUserInterest={trackUserInterest}
+      onRequireLogin={onRequireLogin}
     />;
+  }
+
+  // Restricted Pages Guard
+  if (!currentUser && [
+    'settings', 'profile', 'upload', 'join-creators', 
+    'notifications', 'friends', 'contests', 'edit-profile', 
+    'stats', 'questions'
+  ].includes(normalizedPageId)) {
+    return <div className="min-h-screen" />; // Placeholder while modal shows
   }
 
   if (normalizedPageId === 'settings') return <SettingsView />;
 
   if (normalizedPageId === 'profile') {
-    if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('profile'); }} />;
     return <ProfileView 
-      user={currentUser} 
+      user={currentUser!} 
       currentUser={currentUser} 
       isOwnProfile={true} 
-      mods={mods.filter(m => m.publisherId === currentUser.id)} 
+      mods={mods.filter(m => m.publisherId === currentUser!.id)} 
       onLogout={() => { db.logout(); setCurrentUser(null); onNavigate('login'); }} 
       onEditMod={(m) => { setEditingItem(m); onNavigate('upload'); }} 
       onModClick={handleModClick} 
@@ -264,7 +297,6 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'upload') {
-    if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('upload'); }} />;
     return <UploadForm 
       initialData={editingItem}
       onBack={() => { setEditingItem(null); onNavigate('home'); }} 
@@ -274,10 +306,10 @@ const PageRenderer: React.FC<PageRendererProps> = ({
         const payload = { 
           ...data, 
           id: editingItem?.id, 
-          publisherId: currentUser?.id, 
-          publisherName: currentUser?.displayName, 
-          publisherAvatar: currentUser?.avatar, 
-          isVerified: currentUser.isVerified,
+          publisherId: currentUser!.id, 
+          publisherName: currentUser!.displayName, 
+          publisherAvatar: currentUser!.avatar, 
+          isVerified: currentUser!.isVerified,
           stats: editingItem ? (editingItem as Mod).stats : { views: 0, downloads: 0, likes: 0, dislikes: 0, uniqueViews: 0, ratingCount: 0, averageRating: 0, totalRatingScore: 0 } 
         };
         db.put(coll, payload).then(() => { 
@@ -290,9 +322,8 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'join-creators') {
-    if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('join-creators'); }} />;
     return <CreatorVerification 
-      currentUser={currentUser}
+      currentUser={currentUser!}
       onBack={() => onNavigate('home')}
       onSuccess={async (data, status, videoUrl) => {
         const update: Partial<User> = { verificationStatus: status };
@@ -300,7 +331,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
         if (data.reason) update.verificationReason = data.reason;
         if (data.channelUrl) update.channelUrl = data.channelUrl;
         if (data.subscriberCount) update.subscriberCount = data.subscriberCount;
-        await db.updateAccount(currentUser.id, update);
+        await db.updateAccount(currentUser!.id, update);
         onNavigate('home');
         alert('تم إرسال طلبك للإدارة.');
       }}
@@ -308,8 +339,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'notifications') {
-    if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('notifications'); }} />;
-    return <NotificationsView currentUser={currentUser} onModClick={(link) => fetchModAndSelect(link)} onBack={() => onNavigate('home')} />;
+    return <NotificationsView currentUser={currentUser!} onModClick={(link) => fetchModAndSelect(link)} onBack={() => onNavigate('home')} />;
   }
 
   if (normalizedPageId === 'downloads') {
@@ -317,8 +347,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'friends') {
-    if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('friends'); }} />;
-    return <FriendsView currentUser={currentUser} onViewProfile={(u) => onNavigate(`@${u.username}`)} />;
+    return <FriendsView currentUser={currentUser!} onViewProfile={(u) => onNavigate(`@${u.username}`)} />;
   }
 
   if (normalizedPageId === 'earnings') {
@@ -326,14 +355,12 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'contests') {
-    if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('contests'); }} />;
-    return <ContestsView currentUser={currentUser} onBack={() => onNavigate('earnings')} />;
+    return <ContestsView currentUser={currentUser!} onBack={() => onNavigate('earnings')} />;
   }
 
   if (normalizedPageId === 'edit-profile') {
-    if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('edit-profile'); }} />;
     return <EditProfileView 
-      currentUser={currentUser} 
+      currentUser={currentUser!} 
       onUpdate={(u) => { setCurrentUser(u); }} 
       onLogout={() => { db.logout(); setCurrentUser(null); onNavigate('login'); }} 
       onDelete={() => {}} 
@@ -342,8 +369,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'stats') {
-    if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('stats'); }} />;
-    return <StatsDashboard mods={mods.filter(m => m.publisherId === currentUser.id)} />;
+    return <StatsDashboard mods={mods.filter(m => m.publisherId === currentUser!.id)} />;
   }
 
   if (normalizedPageId === 'admin') {
@@ -358,8 +384,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'questions') {
-    if (!currentUser) return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('questions'); }} />;
-    return <QuestionsView currentUser={currentUser} onBack={() => onNavigate('home')} />;
+    return <QuestionsView currentUser={currentUser!} onBack={() => onNavigate('home')} />;
   }
 
   if (normalizedPageId === 'download') {
