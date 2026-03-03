@@ -7,103 +7,111 @@ import Sidebar from './components/Sidebar';
 import PageRenderer from './components/PageRenderer';
 import GlobalPopup from './components/GlobalPopup';
 import SecurityCheckpoint from './components/SecurityCheckpoint';
-import { Loader2, Lock, Home, Users, Newspaper, Settings, Server, Youtube } from 'lucide-react';
 import { useTranslation } from './LanguageContext';
 
 const ADMIN_EMAIL = 'overmods1@gmail.com';
-const ADMIN_CODE = 'Aiopwbxj';
 
 export default function App() {
-  const { t, isRTL } = useTranslation();
+  const { isRTL } = useTranslation();
 
-  // ✅ قراءة المسار من الرابط مباشرة
-  const getInitialView = () => {
+  // ✅ قراءة المسار الحالي
+  const getPathView = () => {
     const path = window.location.pathname.replace('/', '');
     return path || 'home';
   };
 
-  const [currentView, setCurrentView] = useState<string>(getInitialView());
-
+  const [currentView, setCurrentView] = useState<string>(getPathView());
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isLockedBySecurity, setIsLockedBySecurity] = useState(false);
   const [mods, setMods] = useState<Mod[]>([]);
   const [servers, setServers] = useState<MinecraftServer[]>([]);
   const [newsSnippet, setNewsSnippet] = useState<NewsItem | null>(null);
   const [userDownloads, setUserDownloads] = useState<Mod[]>([]);
   const [editingItem, setEditingItem] = useState<Mod | MinecraftServer | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isInitialized, setIsInitialized] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [adminInput, setAdminInput] = useState('');
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isBottomBarIdle, setIsBottomBarIdle] = useState(false);
 
-  const idleTimerRef = useRef<any>(null);
   const initialLoadDone = useRef(false);
 
-  // ✅ دعم زر الرجوع
+  // ✅ متابعة زر الرجوع (Back button)
   useEffect(() => {
     const handlePopState = () => {
-      const path = window.location.pathname.replace('/', '');
-      setCurrentView(path || 'home');
+      setCurrentView(getPathView());
     };
+
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // ✅ تنقل احترافي
   const handleNavClick = (view: string) => {
-    window.history.pushState({}, '', `/${view}`);
+    if (view === currentView) return;
+
+    window.history.pushState({}, '', view === 'home' ? '/' : `/${view}`);
     setEditingItem(null);
     setCurrentView(view);
+    window.scrollTo(0, 0);
   };
 
+  // ✅ Auth
   useEffect(() => {
-    let profileUnsubscribe: (() => void) | null = null;
+    let unsubscribeProfile: (() => void) | null = null;
 
-    const authUnsubscribe = db.onAuthChange(async (firebaseUser) => {
+    const unsubscribeAuth = db.onAuthChange(async (firebaseUser) => {
       if (firebaseUser) {
-        profileUnsubscribe = onSnapshot(doc(firestore, 'users', firebaseUser.uid), async (docSnap) => {
-          if (docSnap.exists()) {
-            const profile = docSnap.data() as User;
-            const verified = auth.currentUser?.emailVerified || false;
-            setCurrentUser({ ...profile, email: firebaseUser.email || '', emailVerified: verified });
+        unsubscribeProfile = onSnapshot(
+          doc(firestore, 'users', firebaseUser.uid),
+          async (docSnap) => {
+            if (docSnap.exists()) {
+              const profile = docSnap.data() as User;
+              const verified = auth.currentUser?.emailVerified || false;
 
-            if (!initialLoadDone.current) {
-              initializeData();
+              setCurrentUser({
+                ...profile,
+                email: firebaseUser.email || '',
+                emailVerified: verified,
+              });
+
+              if (!initialLoadDone.current) {
+                initializeData();
+              }
             }
-          } else {
-            setIsInitialized(true);
           }
-        });
+        );
       } else {
-        if (profileUnsubscribe) profileUnsubscribe();
+        if (unsubscribeProfile) unsubscribeProfile();
         setCurrentUser(null);
-        setCurrentView('login');
-        setIsInitialized(true);
+
+        // لا نكسر المسار الحالي
+        if (getPathView() !== 'login') {
+          handleNavClick('login');
+        }
       }
     });
 
     return () => {
-      authUnsubscribe();
-      if (profileUnsubscribe) profileUnsubscribe();
+      unsubscribeAuth();
+      if (unsubscribeProfile) unsubscribeProfile();
     };
   }, []);
 
   const initializeData = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
+
     try {
-      const [modsData, s, n] = await Promise.all([
+      const [modsData, serversData, newsData] = await Promise.all([
         db.getAll('mods'),
         db.getAll('servers', 10),
-        db.getAll('news', 1)
+        db.getAll('news', 1),
       ]);
+
       setMods(modsData as Mod[]);
-      setServers(s as MinecraftServer[] || []);
-      if (n && n.length > 0) setNewsSnippet(n[0] as NewsItem);
+      setServers(serversData as MinecraftServer[] || []);
+      if (newsData && newsData.length > 0)
+        setNewsSnippet(newsData[0] as NewsItem);
+
       setIsOffline(false);
     } catch {
       setIsOffline(true);
@@ -126,13 +134,17 @@ export default function App() {
           currentView={currentView as View}
           onViewChange={handleNavClick}
           currentUser={currentUser}
-          onLogout={() => { db.logout(); setCurrentUser(null); handleNavClick('login'); }}
+          onLogout={() => {
+            db.logout();
+            setCurrentUser(null);
+            handleNavClick('login');
+          }}
           isAdminUser={currentUser?.email === ADMIN_EMAIL}
-          onAdminClick={() => setShowAdminModal(true)}
+          onAdminClick={() => {}}
         />
       )}
 
-      <div className={`flex-1 flex flex-col ${!isLoginPage ? 'lg:mr-72' : ''} min-h-screen relative ${!isLoginPage ? 'pb-28' : ''}`}>
+      <div className={`flex-1 flex flex-col ${!isLoginPage ? 'lg:mr-72' : ''} min-h-screen relative`}>
         {!isLoginPage && (
           <Navbar
             currentUser={currentUser}
@@ -162,7 +174,7 @@ export default function App() {
               isRTL={isRTL}
               isAdminAuthenticated={false}
               setIsAdminAuthenticated={() => {}}
-              setShowAdminModal={setShowAdminModal}
+              setShowAdminModal={() => {}}
               setCurrentUser={setCurrentUser}
               editingItem={editingItem}
               setEditingItem={setEditingItem}
@@ -173,4 +185,4 @@ export default function App() {
       </div>
     </div>
   );
-}
+            }
