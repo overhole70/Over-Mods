@@ -193,6 +193,26 @@ const UploadForm: React.FC<UploadFormProps> = ({ onUpload, onCancel, onBack, ini
               <input type="text" value={title} onChange={e=>setTitle(e.target.value)} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl py-5 px-6 text-white font-black text-base outline-none focus:theme-border-primary-alpha" placeholder={type === 'Server' ? "سيرفر الأساطير..." : "مود السيوف المطورة..."} required />
            </div>
 
+           {type !== 'Server' && (
+             <div className="space-y-2 animate-in slide-in-from-top-2">
+                <label className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mr-2">التصنيف</label>
+                <div className="relative">
+                  <select 
+                    value={category} 
+                    onChange={e => setCategory(e.target.value)}
+                    className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl py-5 px-6 text-white font-black text-sm outline-none focus:theme-border-primary-alpha appearance-none cursor-pointer"
+                  >
+                    {CATEGORIES.map(cat => (
+                      <option key={cat} value={cat} className="bg-zinc-900 text-white">{cat}</option>
+                    ))}
+                  </select>
+                  <div className="absolute left-6 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
+                    <Hash size={18} />
+                  </div>
+                </div>
+             </div>
+           )}
+
            <div className="space-y-2">
               <label className="text-[10px] font-black text-zinc-600 uppercase tracking-widest mr-2">الوصف</label>
               <textarea value={description} onChange={e=>setDescription(e.target.value)} rows={5} className="w-full bg-zinc-900/50 border border-white/5 rounded-3xl py-5 px-6 text-white font-medium text-base outline-none focus:theme-border-primary-alpha resize-none" placeholder="اشرح ميزات إبداعك..." required />

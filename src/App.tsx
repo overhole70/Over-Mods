@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import PageRenderer from './components/PageRenderer';
 import { db, auth } from './db';
 import { AppMetadata } from './types/sdui';
@@ -7,6 +7,7 @@ import { User, Mod, MinecraftServer, NewsItem } from './types';
 import { Loader2, Download } from 'lucide-react';
 import { AdService } from './core/AdService';
 import { onAuthStateChanged } from 'firebase/auth';
+import SplashScreen from './components/SplashScreen';
 
 const CURRENT_VERSION = "1.0.0"; 
 
@@ -26,7 +27,7 @@ const PageWrapper = (props: any) => {
 
 export default function App() {
   const [metadata, setMetadata] = useState<AppMetadata | null>(null);
-  const [isReady, setIsReady] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [mods, setMods] = useState<Mod[]>([]);
@@ -55,11 +56,6 @@ export default function App() {
       setMods(fetchedMods as Mod[]);
       setServers(fetchedServers as MinecraftServer[]);
       setNewsSnippet(fetchedNews[0] as NewsItem || null);
-      
-      if (currentUser) {
-        const downloads = await db.getUserMods(currentUser.id);
-        setUserDownloads(downloads);
-      }
     } catch (e) {
       console.error("Data initialization failed", e);
     } finally {
@@ -68,37 +64,40 @@ export default function App() {
   };
 
   useEffect(() => {
-    const init = async () => {
-      try {
-        await AdService.initialize();
-        const meta = await db.get('app_metadata', 'config') as AppMetadata;
-        setMetadata(meta);
-        
-        onAuthStateChanged(auth, async (user) => {
-          if (user) {
-            const userData = await db.get('users', user.uid);
-            if (userData) setCurrentUser(userData as User);
-          } else {
-            setCurrentUser(null);
-          }
-        });
+    // 1. Initialize non-blocking services
+    AdService.initialize().catch(console.error);
+    
+    // 2. Fetch data in background (does not block splash)
+    db.get('app_metadata', 'config').then(m => setMetadata(m as AppMetadata)).catch(console.error);
+    initializeData();
 
-        await initializeData();
-      } catch (e) {
-        console.error("Critical: App init failed.", e);
-      } finally {
-        setIsReady(true);
+    // 3. Auth Listener - Controls Splash Screen
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+           const userData = await db.get('users', user.uid);
+           if (userData) {
+             setCurrentUser(userData as User);
+             // Fetch user downloads in background
+             db.getUserMods(user.uid).then(setUserDownloads).catch(console.error);
+           }
+        } catch (e) {
+           console.error("Auth data fetch failed", e);
+        }
+      } else {
+        setCurrentUser(null);
+        setUserDownloads([]);
       }
-    };
-    init();
+      
+      // ONLY place where splash is dismissed
+      setAuthReady(true);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  if (!isReady) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <Loader2 className="animate-spin text-lime-500" />
-      </div>
-    );
+  if (!authReady) {
+    return <SplashScreen />;
   }
 
   if (metadata && metadata.force_update && metadata.min_version > CURRENT_VERSION) {
@@ -147,11 +146,9 @@ export default function App() {
   };
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/:pageId" element={<PageWrapper {...commonProps} />} />
-        <Route path="/" element={<Navigate to="/home" replace />} />
-      </Routes>
-    </Router>
+    <Routes>
+      <Route path="/:pageId" element={<PageWrapper {...commonProps} />} />
+      <Route path="/" element={<Navigate to="/home" replace />} />
+    </Routes>
   );
 }

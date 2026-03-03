@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { 
   getFirestore,
+  initializeFirestore,
   collection, 
   getDocs, 
   getDoc, 
@@ -54,8 +55,10 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with standard settings (no experimental options)
-export const firestore = getFirestore(app);
+// Initialize Firestore with long polling to avoid connection issues in restricted environments
+export const firestore = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});
 
 export const auth = getAuth(app);
 

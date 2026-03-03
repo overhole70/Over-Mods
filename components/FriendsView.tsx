@@ -56,13 +56,23 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
   }, [activeTab, currentUser.blockedUsers]);
 
   // Fetch Chat Users (Friends + Recent)
+  const prevVisibleIdsRef = useRef<string[]>([]);
+
   useEffect(() => {
     if (activeTab !== 'chat') return;
     
     const fetchUsers = async () => {
-      setIsLoading(true);
       const allIds = Array.from(new Set([...chatPartnerIds, ...myFriends]));
       const visibleIds = allIds.filter(id => !currentUser.hiddenChats?.includes(id));
+      
+      // Optimization: Prevent duplicate fetching if IDs haven't changed
+      const prevIds = prevVisibleIdsRef.current;
+      const isSame = visibleIds.length === prevIds.length && visibleIds.every(id => prevIds.includes(id));
+      
+      if (isSame && recentChatPartners.length > 0) return;
+      
+      prevVisibleIdsRef.current = visibleIds;
+      setIsLoading(true);
       
       if (visibleIds.length === 0) {
          setRecentChatPartners([]);
@@ -70,9 +80,15 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
          return;
       }
 
-      const users = await Promise.all(visibleIds.map(id => db.get('users', id) as Promise<User>));
-      setRecentChatPartners(users.filter(u => !!u && !currentUser.blockedUsers?.includes(u.id)));
-      setIsLoading(false);
+      try {
+        // Parallel fetch with Promise.all
+        const users = await Promise.all(visibleIds.map(id => db.get('users', id) as Promise<User>));
+        setRecentChatPartners(users.filter(u => !!u && !currentUser.blockedUsers?.includes(u.id)));
+      } catch (e) {
+        console.error("Failed to fetch chat partners", e);
+      } finally {
+        setIsLoading(false);
+      }
     };
     
     fetchUsers();
@@ -87,7 +103,9 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
 
     // Chat Listeners
     if (activeTab === 'chat') {
-      setIsLoading(true);
+      // Only set loading if we don't have data yet
+      if (recentChatPartners.length === 0) setIsLoading(true);
+      
       unsubChat = db.subscribeToRecentChats(currentUser.id, (partnerIds) => {
         setChatPartnerIds(partnerIds);
         // Also refresh friends list to ensure sync
@@ -95,36 +113,42 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
       });
     }
 
-    // Requests Listeners - Active in both 'requests' and 'chat' (to show status icons)
+    // Requests Listeners
     if (activeTab === 'requests' || activeTab === 'chat') {
       unsubReqRec = db.subscribeToFriendRequests(currentUser.id, async (reqs) => {
         const filtered = reqs.filter(r => !currentUser.blockedUsers?.includes(r.senderId));
         setPendingRequests(filtered);
         
-        // Fetch users for received requests (senders)
+        // Fetch users for received requests
         const ids = Array.from(new Set(filtered.map(r => r.senderId)));
         if (ids.length > 0) {
             const fetched: Record<string, User> = {};
             await Promise.all(ids.map(async id => {
+                if (usersMap[id]) return; // Skip if already fetched
                 const u = await db.get('users', id);
                 if (u) fetched[id] = u as User;
             }));
-            setUsersMap(prev => ({...prev, ...fetched}));
+            if (Object.keys(fetched).length > 0) {
+                setUsersMap(prev => ({...prev, ...fetched}));
+            }
         }
       });
 
       unsubReqSent = db.subscribeToSentFriendRequests(currentUser.id, async (reqs) => {
         setSentRequests(reqs);
         
-        // Fetch users for sent requests (receivers)
+        // Fetch users for sent requests
         const ids = Array.from(new Set(reqs.map(r => r.receiverId)));
         if (ids.length > 0) {
             const fetched: Record<string, User> = {};
             await Promise.all(ids.map(async id => {
+                if (usersMap[id]) return; // Skip if already fetched
                 const u = await db.get('users', id);
                 if (u) fetched[id] = u as User;
             }));
-            setUsersMap(prev => ({...prev, ...fetched}));
+            if (Object.keys(fetched).length > 0) {
+                setUsersMap(prev => ({...prev, ...fetched}));
+            }
         }
       });
     }
@@ -138,6 +162,9 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
         setInvites(validInvites);
         setIsLoading(false);
       });
+      
+      // Safety timeout to prevent infinite loading if subscription fails or is slow
+      setTimeout(() => setIsLoading(false), 5000);
     }
 
     return () => {
@@ -844,6 +871,45 @@ const FriendsView: React.FC<FriendsViewProps> = ({ currentUser, onViewProfile })
           </div>
         </div>
       )}
+
+      {activeTab === 'blocked' && (
+        <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+           <h3 className="text-xl md:text-2xl font-black text-white flex items-center gap-3">
+             <Ban className="text-red-500" size={24} /> قائمة المحظورين
+           </h3>
+           
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {blockedUsers.map(user => (
+                <div key={user.id} className="bg-zinc-900/30 border border-white/5 p-5 rounded-3xl flex items-center justify-between group hover:border-red-500/20 transition-all">
+                   <div className="flex items-center gap-4 opacity-70 group-hover:opacity-100 transition-opacity">
+                      <img src={user.avatar} className="w-10 h-10 rounded-xl object-cover grayscale group-hover:grayscale-0 transition-all" alt="" />
+                      <div className="text-right">
+                         <h5 className="text-white font-black text-sm">{user.displayName}</h5>
+                         <p className="text-zinc-500 text-[10px] ltr">@{user.username}</p>
+                      </div>
+                   </div>
+                   <button 
+                     onClick={() => handleUnblock(user.id)} 
+                     className="px-4 py-2 bg-zinc-900 text-zinc-400 border border-white/5 rounded-xl hover:bg-lime-500 hover:text-black hover:border-lime-500 font-bold text-xs transition-all"
+                   >
+                     إلغاء الحظر
+                   </button>
+                </div>
+              ))}
+              
+              {blockedUsers.length === 0 && (
+                <div className="col-span-full py-20 text-center border-2 border-dashed border-zinc-900 rounded-[3rem] bg-zinc-900/10">
+                   <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-800">
+                      <ShieldCheck size={32} />
+                   </div>
+                   <h4 className="text-xl font-black text-zinc-600">لا يوجد محظورين</h4>
+                   <p className="text-zinc-800 text-xs font-bold mt-2">قائمتك نظيفة وآمنة</p>
+                </div>
+              )}
+           </div>
+        </div>
+      )}
+
     </div>
   );
 };

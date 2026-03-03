@@ -29,6 +29,7 @@ const HomeView: React.FC<HomeViewProps> = ({
   const [filterCategory, setFilterCategory] = useState<string>('All');
   const [sortBy, setSortBy] = useState<SortType>('recommended');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(10);
 
   const processedMods = useMemo(() => {
     const userInterests = JSON.parse(localStorage.getItem('user_interests') || '{}');
@@ -53,6 +54,14 @@ const HomeView: React.FC<HomeViewProps> = ({
       return weightB - weightA;
     });
   }, [mods, searchTerm, filterType, filterCategory, sortBy]);
+
+  // Reset visible count when filters change
+  React.useEffect(() => {
+    setVisibleCount(10);
+  }, [searchTerm, filterType, filterCategory, sortBy]);
+
+  const displayedMods = processedMods.slice(0, visibleCount);
+  const hasMore = visibleCount < processedMods.length;
 
   return (
     <div className="space-y-12">
@@ -137,7 +146,7 @@ const HomeView: React.FC<HomeViewProps> = ({
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pt-6">
-          {processedMods.flatMap((m, index) => {
+          {displayedMods.flatMap((m, index) => {
             const elements = [
               <ModCard 
                 key={m.id} 
@@ -160,6 +169,17 @@ const HomeView: React.FC<HomeViewProps> = ({
           <div className="py-40 text-center border-2 border-dashed border-zinc-900 rounded-[4rem] text-zinc-700 font-black animate-in fade-in">
               <Ghost size={48} className="mx-auto mb-6 opacity-20" />
               <p className="text-xl">لم نجد أي إضافات تطابق اختياراتك</p>
+          </div>
+        )}
+
+        {hasMore && (
+          <div className="flex justify-center pt-8 pb-12">
+            <button 
+              onClick={() => setVisibleCount(prev => prev + 10)}
+              className="px-8 py-4 bg-zinc-900 hover:bg-zinc-800 text-white rounded-2xl font-black text-sm transition-all active:scale-95 border border-white/5 shadow-xl"
+            >
+              عرض المزيد
+            </button>
           </div>
         )}
       </div>

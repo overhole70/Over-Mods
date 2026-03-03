@@ -12,7 +12,7 @@ interface ModCardProps {
   onFollow: (e: React.MouseEvent) => void;
 }
 
-const ModCard: React.FC<ModCardProps> = ({ mod, onClick, onPublisherClick, isFollowing, onFollow }) => {
+const ModCard: React.FC<ModCardProps> = React.memo(({ mod, onClick, onPublisherClick, isFollowing, onFollow }) => {
   const { t, isRTL } = useTranslation();
   
   // Calculate displayed stats (Real + Fake)
@@ -35,6 +35,7 @@ const ModCard: React.FC<ModCardProps> = ({ mod, onClick, onPublisherClick, isFol
         <img 
           src={mod.mainImage} 
           alt={mod.title} 
+          loading="lazy"
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000 ease-out" 
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60"></div>
@@ -122,6 +123,6 @@ const ModCard: React.FC<ModCardProps> = ({ mod, onClick, onPublisherClick, isFol
       </div>
     </div>
   );
-};
+});
 
 export default ModCard;
