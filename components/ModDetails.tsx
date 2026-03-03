@@ -6,6 +6,7 @@ import { Mod, User, Comment } from '../types';
 import ModBannerAd from './ModBannerAd';
 import { db } from '../db';
 import { useTranslation } from '../LanguageContext';
+import { triggerPopunderIfNeeded } from '../utils/popunderUtils';
 
 interface ModDetailsProps {
   mod?: Mod | null;
@@ -280,6 +281,10 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentU
         console.error("Download tracking failed", err);
       }
     }
+
+    // Trigger Popunder Check (Every 5 downloads)
+    triggerPopunderIfNeeded();
+
     onDownload();
     window.open(mod.downloadUrl, '_blank');
   };
