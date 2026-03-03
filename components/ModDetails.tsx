@@ -283,7 +283,7 @@ const ModDetails: React.FC<ModDetailsProps> = ({ mod: propMod, allMods, currentU
     }
 
     // Trigger Popunder Check (Every 5 downloads)
-    triggerPopunderIfNeeded();
+    // triggerPopunderIfNeeded();
 
     onDownload();
     window.open(mod.downloadUrl, '_blank');

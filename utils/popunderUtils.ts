@@ -3,6 +3,7 @@
  * Triggers only after every 5 successful downloads.
  */
 export const triggerPopunderIfNeeded = () => {
+  /*
   try {
     // 1. Get current count
     const currentCount = parseInt(localStorage.getItem('download_count') || '0', 10);
@@ -45,4 +46,5 @@ export const triggerPopunderIfNeeded = () => {
   } catch (e) {
     console.error('Error in triggerPopunderIfNeeded:', e);
   }
+  */
 };

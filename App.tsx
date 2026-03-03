@@ -239,7 +239,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#050505] text-white overflow-x-hidden">
       {/* Global System Popup */}
       <GlobalPopup onNavigate={handleNavClick} />
-      <DelayedPopunder />
+      {/* <DelayedPopunder /> */}
 
       {!isLoginPage && (
         <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} currentView={currentView as View} onViewChange={(v) => handleNavClick(v)} currentUser={currentUser} onLogout={() => { db.logout(); setCurrentUser(null); setCurrentView('login'); }} isAdminUser={isAdmin || currentUser?.role === 'Helper'} onAdminClick={() => isAdminAuthenticated ? setCurrentView('admin') : setShowAdminModal(true)} />

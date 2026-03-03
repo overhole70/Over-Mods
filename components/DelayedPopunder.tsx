@@ -4,6 +4,7 @@ const DelayedPopunder: React.FC = () => {
   const scriptInjected = useRef(false);
 
   useEffect(() => {
+    /*
     // Check if already triggered in this session
     const hasTriggered = sessionStorage.getItem('popunder_triggered');
     if (hasTriggered) return;
@@ -29,6 +30,7 @@ const DelayedPopunder: React.FC = () => {
     }, 60000); // 60 seconds delay
 
     return () => clearTimeout(timer);
+    */
   }, []);
 
   return null; // This component renders nothing visible
