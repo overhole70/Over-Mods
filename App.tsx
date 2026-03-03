@@ -6,7 +6,7 @@ import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import PageRenderer from './components/PageRenderer';
 import GlobalPopup from './components/GlobalPopup';
-import SecurityCheckpoint from './components/SecurityCheckpoint';
+import { Home, Users, Newspaper, Settings, Server } from 'lucide-react';
 import { useTranslation } from './LanguageContext';
 
 const ADMIN_EMAIL = 'overmods1@gmail.com';
@@ -14,7 +14,6 @@ const ADMIN_EMAIL = 'overmods1@gmail.com';
 export default function App() {
   const { isRTL } = useTranslation();
 
-  // ✅ قراءة المسار الحالي
   const getPathView = () => {
     const path = window.location.pathname.replace('/', '');
     return path || 'home';
@@ -31,87 +30,71 @@ export default function App() {
   const [isOffline, setIsOffline] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
   const initialLoadDone = useRef(false);
 
-  // ✅ متابعة زر الرجوع (Back button)
+  // دعم الرجوع
   useEffect(() => {
     const handlePopState = () => {
       setCurrentView(getPathView());
     };
-
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // ✅ تنقل احترافي
   const handleNavClick = (view: string) => {
     if (view === currentView) return;
-
     window.history.pushState({}, '', view === 'home' ? '/' : `/${view}`);
     setEditingItem(null);
     setCurrentView(view);
     window.scrollTo(0, 0);
   };
 
-  // ✅ Auth
+  // Auth
   useEffect(() => {
-    let unsubscribeProfile: (() => void) | null = null;
+    let unsubProfile: (() => void) | null = null;
 
-    const unsubscribeAuth = db.onAuthChange(async (firebaseUser) => {
+    const unsubAuth = db.onAuthChange(async (firebaseUser) => {
       if (firebaseUser) {
-        unsubscribeProfile = onSnapshot(
+        unsubProfile = onSnapshot(
           doc(firestore, 'users', firebaseUser.uid),
           async (docSnap) => {
             if (docSnap.exists()) {
               const profile = docSnap.data() as User;
               const verified = auth.currentUser?.emailVerified || false;
-
               setCurrentUser({
                 ...profile,
                 email: firebaseUser.email || '',
                 emailVerified: verified,
               });
 
-              if (!initialLoadDone.current) {
-                initializeData();
-              }
+              if (!initialLoadDone.current) initializeData();
             }
           }
         );
       } else {
-        if (unsubscribeProfile) unsubscribeProfile();
+        if (unsubProfile) unsubProfile();
         setCurrentUser(null);
-
-        // لا نكسر المسار الحالي
-        if (getPathView() !== 'login') {
-          handleNavClick('login');
-        }
       }
     });
 
     return () => {
-      unsubscribeAuth();
-      if (unsubscribeProfile) unsubscribeProfile();
+      unsubAuth();
+      if (unsubProfile) unsubProfile();
     };
   }, []);
 
   const initializeData = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
-
     try {
       const [modsData, serversData, newsData] = await Promise.all([
         db.getAll('mods'),
         db.getAll('servers', 10),
         db.getAll('news', 1),
       ]);
-
       setMods(modsData as Mod[]);
       setServers(serversData as MinecraftServer[] || []);
-      if (newsData && newsData.length > 0)
-        setNewsSnippet(newsData[0] as NewsItem);
-
+      if (newsData?.length) setNewsSnippet(newsData[0] as NewsItem);
       setIsOffline(false);
     } catch {
       setIsOffline(true);
@@ -125,6 +108,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#050505] text-white overflow-x-hidden">
+
       <GlobalPopup onNavigate={handleNavClick} />
 
       {!isLoginPage && (
@@ -144,7 +128,7 @@ export default function App() {
         />
       )}
 
-      <div className={`flex-1 flex flex-col ${!isLoginPage ? 'lg:mr-72' : ''} min-h-screen relative`}>
+      <div className={`flex-1 flex flex-col ${!isLoginPage ? 'lg:mr-72 pb-28' : ''}`}>
         {!isLoginPage && (
           <Navbar
             currentUser={currentUser}
@@ -182,7 +166,18 @@ export default function App() {
             />
           </div>
         </main>
+
+        {/* 🔥 الشريط السفلي رجع */}
+        {!isLoginPage && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex gap-2 bg-[#0a0a0a]/95 backdrop-blur-xl border border-white/10 p-2 rounded-3xl shadow-2xl">
+            <button onClick={() => handleNavClick('home')} className="nav-btn"><Home size={20} /></button>
+            <button onClick={() => handleNavClick('friends')} className="nav-btn"><Users size={20} /></button>
+            <button onClick={() => handleNavClick('news')} className="nav-btn"><Newspaper size={20} /></button>
+            <button onClick={() => handleNavClick('servers')} className="nav-btn"><Server size={20} /></button>
+            <button onClick={() => handleNavClick('settings')} className="nav-btn"><Settings size={20} /></button>
+          </div>
+        )}
       </div>
     </div>
   );
-            }
+                                                  }
