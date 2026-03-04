@@ -27,6 +27,7 @@ import QuestionsView from './QuestionsView';
 import CompleteProfileView from './CompleteProfileView';
 import DownloadPage from './DownloadPage';
 import AdStatsView from './AdStatsView';
+import VerifyEmailView from './VerifyEmailView';
 
 interface PageRendererProps {
   activePage: string;
@@ -73,7 +74,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
     const staticPages = [
       'home', 'settings', 'profile', 'servers', 'news', 'upload',
       'join-creators', 'notifications', 'downloads', 'friends',
-      'earnings', 'contests', 'edit-profile', 'admin', 'stats', 'login', 'questions', 'complete-profile', 'download', 'ad-stats'
+      'earnings', 'contests', 'edit-profile', 'admin', 'stats', 'login', 'questions', 'complete-profile', 'download', 'ad-stats', 'verify'
     ];
     return staticPages.includes(id.toLowerCase());
   };
@@ -393,6 +394,10 @@ const PageRenderer: React.FC<PageRendererProps> = ({
 
   if (normalizedPageId === 'ad-stats') {
     return <AdStatsView currentUser={currentUser} />;
+  }
+
+  if (normalizedPageId === 'verify') {
+    return <VerifyEmailView onNavigate={(page) => onNavigate(page)} />;
   }
 
   // --- DYNAMIC RENDER ---
