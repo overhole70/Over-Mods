@@ -60,6 +60,13 @@ const HomeView: React.FC<HomeViewProps> = ({
     setVisibleCount(10);
   }, [searchTerm, filterType, filterCategory, sortBy]);
 
+  // Automatically load mods on mount if empty
+  React.useEffect(() => {
+    if (mods.length === 0 && !isRefreshing) {
+      onRefresh();
+    }
+  }, []);
+
   const displayedMods = processedMods.slice(0, visibleCount);
   const hasMore = visibleCount < processedMods.length;
 
@@ -146,26 +153,33 @@ const HomeView: React.FC<HomeViewProps> = ({
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pt-6">
-          {displayedMods.flatMap((m, index) => {
-            const elements = [
-              <ModCard 
-                key={m.id} 
-                mod={m} 
-                onClick={() => onModClick(m)} 
-                isFollowing={currentUser?.following?.includes(m.publisherId) || false} 
-                onFollow={(e) => { e.stopPropagation(); db.followUser(currentUser!.id, m.publisherId); }} 
-              />
-            ];
-            
-            if (index === 2) {
-              elements.push(<AdCard key="single-ad-banner" />);
-            }
-            
-            return elements;
-          })}
+          {isRefreshing && mods.length === 0 ? (
+            <div className="col-span-full py-40 text-center">
+              <RotateCw size={48} className="mx-auto mb-6 animate-spin text-zinc-700" />
+              <p className="text-xl text-zinc-500 font-black">جاري تحميل الإضافات...</p>
+            </div>
+          ) : (
+            displayedMods.flatMap((m, index) => {
+              const elements = [
+                <ModCard 
+                  key={m.id} 
+                  mod={m} 
+                  onClick={() => onModClick(m)} 
+                  isFollowing={currentUser?.following?.includes(m.publisherId) || false} 
+                  onFollow={(e) => { e.stopPropagation(); db.followUser(currentUser!.id, m.publisherId); }} 
+                />
+              ];
+              
+              if (index === 2) {
+                elements.push(<AdCard key="single-ad-banner" />);
+              }
+              
+              return elements;
+            })
+          )}
         </div>
         
-        {processedMods.length === 0 && !isRefreshing && (
+        {processedMods.length === 0 && !isRefreshing && mods.length > 0 && (
           <div className="py-40 text-center border-2 border-dashed border-zinc-900 rounded-[4rem] text-zinc-700 font-black animate-in fade-in">
               <Ghost size={48} className="mx-auto mb-6 opacity-20" />
               <p className="text-xl">لم نجد أي إضافات تطابق اختياراتك</p>
