@@ -9,6 +9,7 @@ import PageRenderer from './components/PageRenderer';
 import GlobalPopup from './components/GlobalPopup';
 import SecurityCheckpoint from './components/SecurityCheckpoint';
 import DelayedPopunder from './components/DelayedPopunder';
+import LoginModal from './components/LoginModal';
 import { Loader2, Lock, Home, Users, Newspaper, Settings, Server, Youtube } from 'lucide-react';
 import { useTranslation } from './LanguageContext';
 
@@ -40,6 +41,7 @@ export default function App() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [adminInput, setAdminInput] = useState('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -149,7 +151,12 @@ export default function App() {
         // Force login view if not authenticated AND on a restricted page
         const restricted = ['upload', 'profile', 'notifications', 'stats', 'settings', 'edit-profile', 'friends', 'earnings', 'downloads', 'join-creators', 'contests', 'questions'];
         if (restricted.includes(currentView)) {
-           setCurrentView('login');
+           // Instead of redirecting to login view, we show the modal and go home (or stay if possible, but PageRenderer might be blank)
+           // Better UX: Go home and show modal? Or just show modal?
+           // PageRenderer renders a placeholder for restricted pages.
+           // Let's redirect to home and show modal to be safe and clean.
+           setCurrentView('home');
+           setShowLoginModal(true);
         }
         
         // Do NOT preload data for guests
@@ -204,8 +211,13 @@ export default function App() {
 
   const handleNavClick = (view: string) => {
     resetIdleTimer();
-    if (!currentUser && ['upload', 'profile', 'notifications', 'stats', 'settings', 'edit-profile', 'friends', 'earnings', 'downloads', 'join-creators'].includes(view)) {
-      setCurrentView('login'); return;
+    
+    // Restricted pages check
+    const restricted = ['upload', 'profile', 'notifications', 'stats', 'settings', 'edit-profile', 'friends', 'earnings', 'downloads', 'join-creators', 'contests', 'questions'];
+    
+    if (!currentUser && restricted.includes(view)) {
+      setShowLoginModal(true);
+      return;
     }
 
     if (view === 'upload' && currentUser) {
@@ -222,7 +234,7 @@ export default function App() {
   };
 
   const isAdmin = currentUser?.email === ADMIN_EMAIL || currentUser?.role === 'Admin';
-  const isLoginPage = currentView === 'login';
+  // const isLoginPage = currentView === 'login'; // No longer used for hiding UI
 
   // Removed blocking loading screens
   // if (isBootLoading) return ...
@@ -244,19 +256,15 @@ export default function App() {
       <GlobalPopup onNavigate={handleNavClick} />
       {/* <DelayedPopunder /> */}
 
-      {!isLoginPage && (
-        <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} currentView={currentView as View} onViewChange={(v) => handleNavClick(v)} currentUser={currentUser} onLogout={() => { db.logout(); setCurrentUser(null); setCurrentView('login'); }} isAdminUser={isAdmin || currentUser?.role === 'Helper'} onAdminClick={() => isAdminAuthenticated ? setCurrentView('admin') : setShowAdminModal(true)} />
-      )}
+      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} currentView={currentView as View} onViewChange={(v) => handleNavClick(v)} currentUser={currentUser} onLogout={() => { db.logout(); setCurrentUser(null); setCurrentView('home'); }} isAdminUser={isAdmin || currentUser?.role === 'Helper'} onAdminClick={() => isAdminAuthenticated ? setCurrentView('admin') : setShowAdminModal(true)} />
 
-      <div className={`flex-1 flex flex-col ${!isLoginPage ? 'lg:mr-72' : ''} min-h-screen relative ${!isLoginPage ? 'pb-28' : ''}`}>
-        {!isLoginPage && (
-          <Navbar currentUser={currentUser} onViewChange={(v) => handleNavClick(v)} onSearch={setSearchTerm} isOnline={!isOffline} currentView={currentView} onMenuClick={() => setIsSidebarOpen(true)} />
-        )}
+      <div className={`flex-1 flex flex-col lg:mr-72 min-h-screen relative pb-28`}>
+        <Navbar currentUser={currentUser} onViewChange={(v) => handleNavClick(v)} onSearch={setSearchTerm} isOnline={!isOffline} currentView={currentView} onMenuClick={() => setIsSidebarOpen(true)} onLoginClick={() => setShowLoginModal(true)} />
 
         <main className="flex-1 px-4 py-8">
           <div className="max-w-7xl mx-auto">
             {/* YouTuber video submission reminder */}
-            {currentUser && currentUser.verificationStatus === 'youtuber_no_video' && !isLoginPage && (
+            {currentUser && currentUser.verificationStatus === 'youtuber_no_video' && (
               <div className="mb-8 p-6 bg-red-600/10 border border-red-500/20 rounded-[2rem] flex flex-col sm:flex-row items-center justify-between gap-6 animate-in slide-in-from-top-4">
                  <div className="flex items-center gap-5">
                     <div className="w-14 h-14 bg-red-600 text-white rounded-2xl flex items-center justify-center shadow-lg"><Youtube size={28} /></div>
@@ -290,21 +298,21 @@ export default function App() {
               editingItem={editingItem}
               setEditingItem={setEditingItem}
               db={db}
+              onRequireLogin={() => setShowLoginModal(true)}
             />
           </div>
         </main>
 
         {/* Floating Bottom Navigation */}
-        {!isLoginPage && (
-          <div 
-            className={`fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-1 md:gap-1.5 p-1.5 md:p-2 rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.6)] transition-all duration-500 ease-in-out ${
-              isBottomBarIdle 
-                ? 'bg-black/60 backdrop-blur-md border border-white/5 opacity-80 hover:opacity-100 hover:bg-[#0a0a0a]/95 scale-95 hover:scale-100' 
-                : 'bg-[#0a0a0a]/95 backdrop-blur-2xl border border-white/10 opacity-100 scale-100'
-            }`}
-            onClick={resetIdleTimer}
-            onTouchStart={resetIdleTimer}
-          >
+        <div 
+          className={`fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-1 md:gap-1.5 p-1.5 md:p-2 rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.6)] transition-all duration-500 ease-in-out ${
+            isBottomBarIdle 
+              ? 'bg-black/60 backdrop-blur-md border border-white/5 opacity-80 hover:opacity-100 hover:bg-[#0a0a0a]/95 scale-95 hover:scale-100' 
+              : 'bg-[#0a0a0a]/95 backdrop-blur-2xl border border-white/10 opacity-100 scale-100'
+          }`}
+          onClick={resetIdleTimer}
+          onTouchStart={resetIdleTimer}
+        >
             <button 
               onClick={() => handleNavClick('home')}
               className={`flex flex-col items-center justify-center w-14 md:w-[4.5rem] h-14 md:h-16 rounded-[1.5rem] md:rounded-[2rem] transition-all gap-0.5 md:gap-1 ${currentView === 'home' ? 'theme-bg-primary text-black shadow-lg theme-shadow-primary scale-105' : 'text-zinc-500 hover:text-white hover:bg-white/5'}`}
@@ -345,8 +353,13 @@ export default function App() {
               <span className="text-[8px] md:text-[9px] font-black">الإعدادات</span>
             </button>
           </div>
-        )}
       </div>
+
+      <LoginModal 
+        isOpen={showLoginModal} 
+        onClose={() => setShowLoginModal(false)} 
+        onLogin={(u) => { setCurrentUser(u); setShowLoginModal(false); }} 
+      />
 
       {showAdminModal && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">

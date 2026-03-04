@@ -14,9 +14,10 @@ interface NavbarProps {
   onAdminClick?: () => void;
   currentView?: string;
   onMenuClick?: () => void;
+  onLoginClick?: () => void;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ currentUser, onViewChange, onSearch, isOnline, currentView, onMenuClick }) => {
+const Navbar: React.FC<NavbarProps> = ({ currentUser, onViewChange, onSearch, isOnline, currentView, onMenuClick, onLoginClick }) => {
   const { t, isRTL } = useTranslation();
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -71,7 +72,10 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onViewChange, onSearch, is
             </button>
           </div>
         ) : (
-          <button onClick={() => onViewChange('login')} className="bg-white text-black px-6 md:px-10 h-12 md:h-14 rounded-2xl text-xs md:text-sm font-black hover:theme-bg-primary transition-all shadow-2xl active:scale-95">
+          <button 
+            onClick={() => onLoginClick ? onLoginClick() : onViewChange('login')} 
+            className="bg-white text-black px-6 md:px-10 h-12 md:h-14 rounded-2xl text-xs md:text-sm font-black hover:theme-bg-primary transition-all shadow-2xl active:scale-95"
+          >
             {t('common.login')}
           </button>
         )}

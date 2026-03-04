@@ -18,7 +18,7 @@ const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) => {
 
     if (!oobCode) {
       setStatus('error');
-      setErrorMessage('Invalid verification link. Code is missing.');
+      setErrorMessage('رابط التحقق غير صالح. الرمز مفقود.');
       return;
     }
 
@@ -30,7 +30,7 @@ const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) => {
     } catch (error: any) {
       console.error("Email verification failed", error);
       setStatus('error');
-      setErrorMessage(error.message || 'Failed to verify email. Please try again.');
+      setErrorMessage(error.message || 'فشل تأكيد البريد الإلكتروني. يرجى المحاولة مرة أخرى.');
     }
   };
 
@@ -43,15 +43,15 @@ const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) => {
             <div className="w-20 h-20 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-6">
               <Mail className="text-white" size={40} />
             </div>
-            <h2 className="text-2xl font-black text-white mb-4">Email Verification</h2>
+            <h2 className="text-2xl font-black text-white mb-4">تأكيد البريد الإلكتروني</h2>
             <p className="text-zinc-400 mb-8 leading-relaxed">
-              Please click the button below to verify your email address and activate your account.
+              يجب تأكيد بريدك الإلكتروني قبل استخدام حسابك.
             </p>
             <button 
               onClick={handleVerify}
               className="w-full py-4 bg-lime-500 text-black rounded-2xl font-black text-lg hover:bg-lime-400 active:scale-95 transition-all"
             >
-              Verify Email Now
+              تأكيد البريد الآن
             </button>
           </>
         )}
@@ -59,7 +59,7 @@ const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) => {
         {status === 'verifying' && (
           <div className="py-12">
             <Loader2 className="animate-spin text-lime-500 mx-auto mb-6" size={48} />
-            <h3 className="text-xl font-bold text-white">Verifying...</h3>
+            <h3 className="text-xl font-bold text-white">جاري التحقق...</h3>
           </div>
         )}
 
@@ -68,15 +68,15 @@ const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) => {
             <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle size={40} />
             </div>
-            <h2 className="text-2xl font-black text-white mb-4">Verified Successfully!</h2>
+            <h2 className="text-2xl font-black text-white mb-4">تم تأكيد البريد الإلكتروني</h2>
             <p className="text-zinc-400 mb-8">
-              Your email has been successfully verified. You can now access all features.
+              تم تأكيد بريدك الإلكتروني بنجاح. يمكنك الآن استخدام حسابك.
             </p>
             <button 
               onClick={() => onNavigate('home')}
               className="w-full py-4 bg-white text-black rounded-2xl font-black text-lg hover:bg-zinc-200 active:scale-95 transition-all"
             >
-              Go to Home
+              الذهاب إلى الصفحة الرئيسية
             </button>
           </>
         )}
@@ -86,15 +86,15 @@ const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) => {
             <div className="w-20 h-20 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
               <AlertCircle size={40} />
             </div>
-            <h2 className="text-2xl font-black text-white mb-4">Verification Failed</h2>
+            <h2 className="text-2xl font-black text-white mb-4">فشل التحقق</h2>
             <p className="text-red-400 mb-8 text-sm bg-red-500/10 p-4 rounded-xl border border-red-500/20">
-              {errorMessage}
+              {errorMessage || 'تعذر تأكيد البريد الإلكتروني. قد يكون الرابط غير صالح أو منتهي الصلاحية.'}
             </p>
             <button 
               onClick={() => onNavigate('home')}
               className="w-full py-4 bg-zinc-800 text-white rounded-2xl font-black text-lg hover:bg-zinc-700 active:scale-95 transition-all"
             >
-              Return Home
+              العودة للرئيسية
             </button>
           </>
         )}

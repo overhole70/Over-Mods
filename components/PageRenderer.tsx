@@ -28,6 +28,7 @@ import CompleteProfileView from './CompleteProfileView';
 import DownloadPage from './DownloadPage';
 import AdStatsView from './AdStatsView';
 import VerifyEmailView from './VerifyEmailView';
+import EmailVerificationRequiredView from './EmailVerificationRequiredView';
 
 interface PageRendererProps {
   activePage: string;
@@ -256,6 +257,15 @@ const PageRenderer: React.FC<PageRendererProps> = ({
     'stats', 'questions'
   ].includes(normalizedPageId)) {
     return <div className="min-h-screen" />; // Placeholder while modal shows
+  }
+
+  // Email Verification Guard
+  if (currentUser && !currentUser.emailVerified && [
+    'profile', 'upload', 'friends', 'settings', 
+    'earnings', 'downloads', 'stats', 'join-creators', 
+    'notifications', 'contests', 'edit-profile', 'questions'
+  ].includes(normalizedPageId)) {
+    return <EmailVerificationRequiredView currentUser={currentUser} />;
   }
 
   if (normalizedPageId === 'settings') return <SettingsView />;
