@@ -235,6 +235,7 @@ export default function App() {
 
   const isAdmin = currentUser?.email === ADMIN_EMAIL || currentUser?.role === 'Admin';
   // const isLoginPage = currentView === 'login'; // No longer used for hiding UI
+  const isAuthPage = currentView === 'login' || currentView === 'signup';
 
   // Removed blocking loading screens
   // if (isBootLoading) return ...
@@ -256,10 +257,14 @@ export default function App() {
       <GlobalPopup onNavigate={handleNavClick} />
       {/* <DelayedPopunder /> */}
 
-      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} currentView={currentView as View} onViewChange={(v) => handleNavClick(v)} currentUser={currentUser} onLogout={() => { db.logout(); setCurrentUser(null); setCurrentView('home'); }} isAdminUser={isAdmin || currentUser?.role === 'Helper'} onAdminClick={() => isAdminAuthenticated ? setCurrentView('admin') : setShowAdminModal(true)} />
+      {!isAuthPage && (
+        <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} currentView={currentView as View} onViewChange={(v) => handleNavClick(v)} currentUser={currentUser} onLogout={() => { db.logout(); setCurrentUser(null); setCurrentView('home'); }} isAdminUser={isAdmin || currentUser?.role === 'Helper'} onAdminClick={() => isAdminAuthenticated ? setCurrentView('admin') : setShowAdminModal(true)} />
+      )}
 
-      <div className={`flex-1 flex flex-col lg:mr-72 min-h-screen relative pb-28`}>
-        <Navbar currentUser={currentUser} onViewChange={(v) => handleNavClick(v)} onSearch={setSearchTerm} isOnline={!isOffline} currentView={currentView} onMenuClick={() => setIsSidebarOpen(true)} onLoginClick={() => setShowLoginModal(true)} />
+      <div className={`flex-1 flex flex-col ${!isAuthPage ? 'lg:mr-72' : ''} min-h-screen relative ${!isAuthPage ? 'pb-28' : ''}`}>
+        {!isAuthPage && (
+          <Navbar currentUser={currentUser} onViewChange={(v) => handleNavClick(v)} onSearch={setSearchTerm} isOnline={!isOffline} currentView={currentView} onMenuClick={() => setIsSidebarOpen(true)} onLoginClick={() => setShowLoginModal(true)} />
+        )}
 
         <main className="flex-1 px-4 py-8">
           <div className="max-w-7xl mx-auto">
@@ -304,15 +309,16 @@ export default function App() {
         </main>
 
         {/* Floating Bottom Navigation */}
-        <div 
-          className={`fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-1 md:gap-1.5 p-1.5 md:p-2 rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.6)] transition-all duration-500 ease-in-out ${
-            isBottomBarIdle 
-              ? 'bg-black/60 backdrop-blur-md border border-white/5 opacity-80 hover:opacity-100 hover:bg-[#0a0a0a]/95 scale-95 hover:scale-100' 
-              : 'bg-[#0a0a0a]/95 backdrop-blur-2xl border border-white/10 opacity-100 scale-100'
-          }`}
-          onClick={resetIdleTimer}
-          onTouchStart={resetIdleTimer}
-        >
+        {!isAuthPage && (
+          <div 
+            className={`fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-1 md:gap-1.5 p-1.5 md:p-2 rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.6)] transition-all duration-500 ease-in-out ${
+              isBottomBarIdle 
+                ? 'bg-black/60 backdrop-blur-md border border-white/5 opacity-80 hover:opacity-100 hover:bg-[#0a0a0a]/95 scale-95 hover:scale-100' 
+                : 'bg-[#0a0a0a]/95 backdrop-blur-2xl border border-white/10 opacity-100 scale-100'
+            }`}
+            onClick={resetIdleTimer}
+            onTouchStart={resetIdleTimer}
+          >
             <button 
               onClick={() => handleNavClick('home')}
               className={`flex flex-col items-center justify-center w-14 md:w-[4.5rem] h-14 md:h-16 rounded-[1.5rem] md:rounded-[2rem] transition-all gap-0.5 md:gap-1 ${currentView === 'home' ? 'theme-bg-primary text-black shadow-lg theme-shadow-primary scale-105' : 'text-zinc-500 hover:text-white hover:bg-white/5'}`}
@@ -353,6 +359,7 @@ export default function App() {
               <span className="text-[8px] md:text-[9px] font-black">الإعدادات</span>
             </button>
           </div>
+        )}
       </div>
 
       <LoginModal 

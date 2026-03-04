@@ -5,10 +5,12 @@ import { db, auth } from '../db';
 
 interface LoginViewProps {
   onLogin: (user: User) => void;
+  viewMode?: 'login' | 'register' | 'both';
+  onNavigate?: (path: string) => void;
 }
 
-const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+const LoginView: React.FC<LoginViewProps> = ({ onLogin, viewMode = 'both', onNavigate }) => {
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>(viewMode === 'register' ? 'register' : 'login');
   const [registerStep, setRegisterStep] = useState<'select' | 'form'>('select');
   const [regMethod, setRegMethod] = useState<'email' | 'username'>('email');
   
@@ -37,6 +39,12 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
   const [legalModal, setLegalModal] = useState<{ isOpen: boolean, type: 'privacy' | 'terms' }>({ isOpen: false, type: 'privacy' });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (viewMode !== 'both') {
+      setActiveTab(viewMode);
+    }
+  }, [viewMode]);
 
   useEffect(() => {
     if (error) setError(null);
@@ -310,22 +318,31 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
         
         <div className="bg-[#0a0a0a] border border-white/5 rounded-[3.5rem] shadow-2xl relative overflow-hidden">
           {/* Tabs header */}
-          <div className="flex border-b border-white/5">
-            <button 
-              disabled={isLoading}
-              onClick={() => { setActiveTab('login'); }}
-              className={`flex-1 py-6 text-sm font-black transition-all ${activeTab === 'login' ? 'theme-text-primary bg-primary-alpha' : 'text-zinc-600 hover:text-zinc-400'}`}
-            >
-              تسجيل دخول
-            </button>
-            <button 
-              disabled={isLoading}
-              onClick={() => { setActiveTab('register'); }}
-              className={`flex-1 py-6 text-sm font-black transition-all ${activeTab === 'register' ? 'theme-text-primary bg-primary-alpha' : 'text-zinc-600 hover:text-zinc-400'}`}
-            >
-              إنشاء حساب
-            </button>
-          </div>
+          {viewMode === 'both' && (
+            <div className="flex border-b border-white/5">
+              <button 
+                disabled={isLoading}
+                onClick={() => { setActiveTab('login'); }}
+                className={`flex-1 py-6 text-sm font-black transition-all ${activeTab === 'login' ? 'theme-text-primary bg-primary-alpha' : 'text-zinc-600 hover:text-zinc-400'}`}
+              >
+                تسجيل دخول
+              </button>
+              <button 
+                disabled={isLoading}
+                onClick={() => { setActiveTab('register'); }}
+                className={`flex-1 py-6 text-sm font-black transition-all ${activeTab === 'register' ? 'theme-text-primary bg-primary-alpha' : 'text-zinc-600 hover:text-zinc-400'}`}
+              >
+                إنشاء حساب
+              </button>
+            </div>
+          )}
+
+          {viewMode !== 'both' && (
+             <div className="p-8 pb-0 text-center">
+                <h2 className="text-2xl font-black text-white mb-2">{viewMode === 'login' ? 'تسجيل الدخول' : 'إنشاء حساب جديد'}</h2>
+                <p className="text-zinc-500 text-sm font-medium">مرحباً بك في مجتمع Over Mods</p>
+             </div>
+          )}
 
           <div className="p-8 md:p-10">
             {/* Alerts */}
@@ -384,6 +401,14 @@ const LoginView: React.FC<LoginViewProps> = ({ onLogin }) => {
                     </button>
                   )}
                 </div>
+
+                {viewMode === 'login' && onNavigate && (
+                  <div className="text-center pt-4 border-t border-white/5 mt-4">
+                    <p className="text-zinc-500 text-xs font-medium">
+                      ليس لديك حساب؟ <button type="button" onClick={() => onNavigate('signup')} className="text-white font-black hover:theme-text-primary transition-colors">إنشاء حساب جديد</button>
+                    </p>
+                  </div>
+                )}
               </form>
             )}
 

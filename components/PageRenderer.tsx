@@ -29,6 +29,8 @@ import DownloadPage from './DownloadPage';
 import AdStatsView from './AdStatsView';
 import VerifyEmailView from './VerifyEmailView';
 import EmailVerificationRequiredView from './EmailVerificationRequiredView';
+import LoginPage from './LoginPage';
+import SignupPage from './SignupPage';
 
 interface PageRendererProps {
   activePage: string;
@@ -75,7 +77,7 @@ const PageRenderer: React.FC<PageRendererProps> = ({
     const staticPages = [
       'home', 'settings', 'profile', 'servers', 'news', 'upload',
       'join-creators', 'notifications', 'downloads', 'friends',
-      'earnings', 'contests', 'edit-profile', 'admin', 'stats', 'login', 'questions', 'complete-profile', 'download', 'ad-stats', 'verify'
+      'earnings', 'contests', 'edit-profile', 'admin', 'stats', 'login', 'signup', 'questions', 'complete-profile', 'download', 'ad-stats', 'verify'
     ];
     return staticPages.includes(id.toLowerCase());
   };
@@ -286,7 +288,11 @@ const PageRenderer: React.FC<PageRendererProps> = ({
   }
 
   if (normalizedPageId === 'login') {
-    return <LoginView onLogin={(u) => { setCurrentUser(u); onNavigate('home'); }} />;
+    return <LoginPage onLogin={(u) => { setCurrentUser(u); onNavigate('home'); }} onNavigate={onNavigate} />;
+  }
+
+  if (normalizedPageId === 'signup') {
+    return <SignupPage onLogin={(u) => { setCurrentUser(u); onNavigate('complete-profile'); }} onNavigate={onNavigate} />;
   }
 
   if (normalizedPageId === 'servers') {
