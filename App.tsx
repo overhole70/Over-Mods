@@ -15,6 +15,11 @@ import { useTranslation } from './LanguageContext';
 const ADMIN_EMAIL = 'overmods1@gmail.com';
 const ADMIN_CODE = 'Aiopwbxj';
 
+const getInitialView = () => {
+  const path = window.location.pathname.replace('/', '');
+  return path || 'home';
+};
+
 export default function App() {
   const { t, isRTL } = useTranslation();
   // Removed hooks
@@ -28,7 +33,7 @@ export default function App() {
   const [editingItem, setEditingItem] = useState<Mod | MinecraftServer | null>(null);
   
   // Navigation State
-  const [currentView, setCurrentView] = useState<string>('home');
+  const [currentView, setCurrentView] = useState<string>(getInitialView());
   
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -80,11 +85,6 @@ export default function App() {
   }, [currentView]);
 
   // Handle initial URL path for direct access to /download
-  useEffect(() => {
-    if (window.location.pathname === '/download') {
-      setCurrentView('download');
-    }
-  }, []);
 
   useEffect(() => {
     let profileUnsubscribe: (() => void) | null = null;
@@ -146,8 +146,11 @@ export default function App() {
         setUserDownloads([]);
         setIsInitialized(true);
         
-        // Force login view if not authenticated
-        setCurrentView('login');
+        // Force login view if not authenticated AND on a restricted page
+        const restricted = ['upload', 'profile', 'notifications', 'stats', 'settings', 'edit-profile', 'friends', 'earnings', 'downloads', 'join-creators', 'contests', 'questions'];
+        if (restricted.includes(currentView)) {
+           setCurrentView('login');
+        }
         
         // Do NOT preload data for guests
         // initializeData(null);
