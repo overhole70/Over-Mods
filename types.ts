@@ -177,6 +177,7 @@ export interface User {
   };
   // Questions Game
   questionProgress?: QuestionProgress;
+  autoApproveVerifications?: boolean;
 }
 
 export interface PrivacySettings {

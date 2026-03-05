@@ -1106,7 +1106,62 @@ export class PlatformDB {
   async deleteServer(id: string) { await deleteDoc(doc(firestore, 'servers', id)); }
   async getStaffMessages(): Promise<StaffMessage[]> { const q = query(collection(firestore, 'staff_messages'), orderBy('createdAt', 'desc'), limit(50)); const snap = await getDocs(q); return snap.docs.map(d => ({ id: d.id, ...d.data() } as StaffMessage)).reverse(); }
   async sendStaffMessage(user: User, text: string) { await addDoc(collection(firestore, 'staff_messages'), { userId: user.id, userName: user.displayName, userAvatar: user.avatar, userRole: user.role, text, createdAt: new Date().toISOString() }); }
-  async getSiteSettings() { const snap = await getDoc(doc(firestore, 'settings', 'site')); return snap.exists() ? snap.data() : {}; }
+  async getSiteSettings() { 
+    let settings: any = {};
+    try {
+      const snap = await getDoc(doc(firestore, 'settings', 'site'));
+      if (snap.exists()) settings = snap.data();
+    } catch (e) { console.warn("Failed to fetch settings/site", e); }
+
+    try {
+      // Try lowercase first
+      let q = query(collection(firestore, 'users'), where('email', '==', 'overmods1@gmail.com'));
+      let snap = await getDocs(q);
+      
+      // If not found, try capitalized version just in case
+      if (snap.empty) {
+        q = query(collection(firestore, 'users'), where('email', '==', 'Overmods1@gmail.com'));
+        snap = await getDocs(q);
+      }
+
+      if (!snap.empty) {
+        const ownerData = snap.docs[0].data();
+        if (ownerData.autoApproveVerifications !== undefined) {
+          settings.autoApproveVerifications = ownerData.autoApproveVerifications;
+        }
+      }
+    } catch (e) { console.warn("Failed to fetch owner settings", e); }
+    
+    return settings;
+  }
+
+  async updateSiteSettings(settings: any) { 
+    if (settings.autoApproveVerifications !== undefined) {
+      try {
+        let q = query(collection(firestore, 'users'), where('email', '==', 'overmods1@gmail.com'));
+        let snap = await getDocs(q);
+        
+        if (snap.empty) {
+          q = query(collection(firestore, 'users'), where('email', '==', 'Overmods1@gmail.com'));
+          snap = await getDocs(q);
+        }
+
+        if (!snap.empty) {
+          await updateDoc(doc(firestore, 'users', snap.docs[0].id), { 
+            autoApproveVerifications: settings.autoApproveVerifications 
+          });
+        }
+      } catch (e) { console.warn("Failed to update owner settings", e); }
+    }
+    
+    try {
+       await setDoc(doc(firestore, 'settings', 'site'), settings, { merge: true });
+    } catch (e: any) {
+       if (e.code !== 'permission-denied') {
+         console.warn("Update settings/site failed", e);
+       }
+    }
+  }
   generateAdminCode(): string { return 'AC-' + Math.random().toString(36).substr(2, 8).toUpperCase(); }
   async updatePermissions(userId: string, permissions: AdminPermissions, role: UserRole, code?: string) { const data: any = { adminPermissions: permissions, role }; if (code) data.adminCode = code; await updateDoc(doc(firestore, 'users', userId), data); }
   async createComplaint(userId: string, username: string, subject: string, message: string) { await addDoc(collection(firestore, 'complaints'), { userId, username, subject, message, status: 'pending', createdAt: new Date().toISOString() }); }

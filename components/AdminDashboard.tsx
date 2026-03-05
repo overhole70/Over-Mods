@@ -90,6 +90,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
 
   // Site & News States
   const [siteSettings, setSiteSettings] = useState<any>({ appIcon: '', heroImage: '', sideImage: '' });
+  const [autoApprove, setAutoApprove] = useState(false);
   const [isAddingNews, setIsAddingNews] = useState(false);
   const [newsTitle, setNewsTitle] = useState('');
   const [newsContent, setNewsContent] = useState('');
@@ -218,6 +219,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
       if (comp) setComplaints(comp as Complaint[]);
       setNews(n as NewsItem[] || []);
       setSiteSettings(site);
+      
+      let autoApproveVal = site.autoApproveVerifications === true;
+      if (isOwner && currentUser?.autoApproveVerifications !== undefined) {
+          autoApproveVal = currentUser.autoApproveVerifications;
+      }
+      setAutoApprove(autoApproveVal);
+
       if (popup) setPopupConfig(popup as PopupWindowConfig);
     } catch (e) {
       console.error("Admin load failed", e);
@@ -569,6 +577,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, onInspectA
          {/* Verification Requests Section */}
          {activeTab === 'requests' && isTabPermitted('requests') && (
            <div className="space-y-8">
+              {isOwner && (
+                <div className="bg-zinc-900 border border-white/5 p-6 rounded-3xl flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${autoApprove ? 'bg-lime-500/10 text-lime-500' : 'bg-zinc-800 text-zinc-500'}`}>
+                      <ShieldCheck size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-white font-bold text-lg">الموافقة التلقائية</h3>
+                      <p className="text-zinc-500 text-sm">تفعيل قبول طلبات التوثيق تلقائياً دون مراجعة</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={async () => {
+                      const newState = !autoApprove;
+                      setAutoApprove(newState);
+                      await db.updateSiteSettings({ autoApproveVerifications: newState });
+                      if (isOwner && currentUser) {
+                          await db.updateAccount(currentUser.id, { autoApproveVerifications: newState });
+                      }
+                    }}
+                    className={`w-14 h-8 rounded-full relative transition-colors ${autoApprove ? 'bg-lime-500' : 'bg-zinc-700'}`}
+                  >
+                    <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all ${autoApprove ? 'left-1' : 'left-7'}`} />
+                  </button>
+                </div>
+              )}
               <SectionHeader title="طلبات التوثيق" count={requests.length} />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  {requests.map(req => (

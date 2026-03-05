@@ -343,14 +343,19 @@ const PageRenderer: React.FC<PageRendererProps> = ({
       currentUser={currentUser!}
       onBack={() => onNavigate('home')}
       onSuccess={async (data, status, videoUrl) => {
-        const update: Partial<User> = { verificationStatus: status };
+        const settings = await db.getSiteSettings();
+        const autoApprove = settings.autoApproveVerifications === true;
+
+        const update: Partial<User> = { verificationStatus: autoApprove ? 'verified' : status };
+        if (autoApprove) update.isVerified = true;
+
         if (videoUrl) update.verificationVideoUrl = videoUrl;
         if (data.reason) update.verificationReason = data.reason;
         if (data.channelUrl) update.channelUrl = data.channelUrl;
         if (data.subscriberCount) update.subscriberCount = data.subscriberCount;
         await db.updateAccount(currentUser!.id, update);
         onNavigate('home');
-        alert('تم إرسال طلبك للإدارة.');
+        alert(autoApprove ? 'تم توثيق حسابك تلقائياً!' : 'تم إرسال طلبك للإدارة.');
       }}
     />;
   }

@@ -24,14 +24,14 @@ const VerifyEmailView: React.FC<VerifyEmailViewProps> = ({ onNavigate }) => {
     const modeParam = queryParams.get('mode');
     const codeParam = queryParams.get('oobCode');
 
+    const allowedModes = ['verifyEmail', 'resetPassword'];
+    if (!modeParam || !codeParam || !allowedModes.includes(modeParam)) {
+       window.location.href = '/';
+       return;
+    }
+
     setMode(modeParam);
     setOobCode(codeParam);
-
-    if (!codeParam) {
-      setStatus('error');
-      setErrorMessage('رابط غير صالح. رمز التحقق مفقود.');
-      return;
-    }
 
     // Optional: Verify code validity on mount for password reset to show email
     if (modeParam === 'resetPassword' && codeParam) {
